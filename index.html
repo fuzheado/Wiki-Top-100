@@ -263,6 +263,7 @@ svg { width: 100%; height: 100%; }
     <button class="refresh-btn" onclick="cyclePlaybackSpeed()" id="speed-btn" title="Time per node (click to cycle)">3s</button>
     <button class="refresh-btn" onclick="cyclePlaybackZoom()" id="zoom-btn" title="Playback zoom level (click to cycle)">🔍 1x</button>
     <button class="refresh-btn" onclick="cycleFontSize()" id="fontsize-btn" title="Label font size (click to cycle)">Aa 10</button>
+    <button class="refresh-btn" onclick="cyclePlaybackOrder()" id="order-btn" title="Playback order (click to toggle)">🔢 Rank</button>
     <button class="refresh-btn" onclick="hardRefresh()" title="Clear cache and rebuild">⟳ Refresh</button>
     <button class="refresh-btn" onclick="toggleAbout()" title="About this project">About</button>
     <div class="stats" id="stats"></div>
@@ -525,7 +526,7 @@ function syncUrl() {
   const params = new URLSearchParams();
   const originalParams = new URLSearchParams(window.location.search);
   for (const [k, v] of originalParams) {
-    if (!["date","ignore","spacing","helpers","labels","legend","image","speed","zoom","fontsize"].includes(k)) {
+    if (!["date","ignore","spacing","helpers","labels","legend","image","speed","zoom","fontsize","order"].includes(k)) {
       params.set(k, v);
     }
   }
@@ -546,6 +547,8 @@ function syncUrl() {
   if (Math.abs(zoom - 1) > 0.01) params.set("zoom", String(zoom));
   const fs = loadFontSize();
   if (fs !== 10) params.set("fontsize", String(fs));
+  const order = loadPlaybackOrder();
+  if (order !== "rank") params.set("order", order);
   const qs = params.toString();
   const newUrl = window.location.pathname + (qs ? "?" + qs : "");
   window.history.replaceState({}, "", newUrl);
@@ -568,6 +571,10 @@ function applyPreGraphParams(params) {
   if (params.has("fontsize")) {
     localStorage.setItem("wiki_font_size", parseInt(params.get("fontsize")));
     document.getElementById("fontsize-btn").textContent = "Aa " + params.get("fontsize");
+  }
+  if (params.has("order")) {
+    localStorage.setItem("wiki_playback_order", params.get("order"));
+    document.getElementById("order-btn").textContent = params.get("order") === "random" ? "🎲 Random" : "🔢 Rank";
   }
   if (params.has("spacing")) {
     spacingValue = parseInt(params.get("spacing"));
@@ -637,6 +644,7 @@ document.getElementById("speed-btn").textContent = (loadPlaybackSpeed() / 1000) 
 const initZoom = loadPlaybackZoom();
 document.getElementById("zoom-btn").textContent = initZoom === 1 ? "🔍 1x" : "🔍 " + initZoom + "x";
 document.getElementById("fontsize-btn").textContent = "Aa " + loadFontSize();
+document.getElementById("order-btn").textContent = loadPlaybackOrder() === "random" ? "🎲 Random" : "🔢 Rank";
 setupOnce();
 const urlParams = new URLSearchParams(window.location.search);
 applyPreGraphParams(urlParams);
@@ -1088,12 +1096,36 @@ function cycleFontSize() {
   syncUrl();
 }
 
+function loadPlaybackOrder() {
+  return localStorage.getItem("wiki_playback_order") || "rank";
+}
+
+function cyclePlaybackOrder() {
+  const next = loadPlaybackOrder() === "rank" ? "random" : "rank";
+  localStorage.setItem("wiki_playback_order", next);
+  document.getElementById("order-btn").textContent = next === "rank" ? "🔢 Rank" : "🎲 Random";
+  syncUrl();
+}
+
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function togglePlayback() {
   if (playbackActive) {
     stopPlayback();
     return;
   }
-  const articles = (graphData ? graphData.nodes : []).filter(n => n.type === "article").sort((a, b) => a.rank - b.rank);
+  let articles = (graphData ? graphData.nodes : []).filter(n => n.type === "article");
+  if (loadPlaybackOrder() === "random") {
+    shuffleArray(articles);
+  } else {
+    articles.sort((a, b) => a.rank - b.rank);
+  }
   if (articles.length === 0) return;
   playbackActive = true;
   playbackIndex = 0;
