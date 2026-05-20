@@ -3,18 +3,20 @@
 
 Endpoints:
   GET /                     → index.html (static files)
-  GET /api/graph?year=2026&month=5&day=18  → SSE stream: progress events, then graph data
+  GET /api/graph?year=&month=&day=&refresh=1  → NDJSON stream with progress
 
-Usage:
-  python3 server.py [port]
+Query params:
+  year, month, day          — date to build (default: 2026/5/17)
+  min_entity                — entity helper threshold (default: 3)
+  ignore                    — comma-separated articles to exclude
+  user_agent                — custom User-Agent string
+  refresh                   — set to 1 to clear cache before building
 """
-import json
-import os
-import sys
+import json, os, sys, shutil
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-from build_graph import build_graph
+from build_graph import build_graph, CACHE_DIR
 
 
 class GraphAPIHandler(SimpleHTTPRequestHandler):
@@ -31,9 +33,15 @@ class GraphAPIHandler(SimpleHTTPRequestHandler):
                 ignore_raw = params.get("ignore", [None])[0]
                 ignore_list = ignore_raw.split(",") if ignore_raw else None
                 user_agent = params.get("user_agent", [None])[0]
+                refresh = params.get("refresh", ["0"])[0] == "1"
             except (ValueError, KeyError):
                 self.send_error(400, "Invalid parameters")
                 return
+
+            if refresh:
+                if os.path.exists(CACHE_DIR):
+                    shutil.rmtree(CACHE_DIR)
+                    print(f"  Cache cleared on refresh request")
 
             self.send_response(200)
             self.send_header("Content-Type", "application/x-ndjson")

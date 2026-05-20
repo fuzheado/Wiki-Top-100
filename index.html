@@ -106,6 +106,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .hide-btn:hover { border-color: #6c5ce7; }
 .hide-btn.active { background: #e74c3c44; border-color: #e74c3c; color: #e74c3c; }
 
+.refresh-btn {
+  padding: 1px 8px; border: 1px solid #555; border-radius: 3px;
+  background: #2a2a4a; color: #888; font-size: 10px; cursor: pointer;
+  transition: all 0.15s;
+}
+.refresh-btn:hover { border-color: #f39c12; color: #f39c12; }
+
+.failed-warning {
+  font-size: 10px; color: #e74c3c; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.failed-warning:hover { color: #ff6b6b; }
+.failed-detail {
+  display: none; position: absolute; top: 100%; right: 0; z-index: 200;
+  background: rgba(30,30,50,0.98); border: 1px solid #e74c3c; border-radius: 6px;
+  padding: 10px 14px; min-width: 280px; max-height: 300px; overflow-y: auto;
+  margin-top: 2px; font-size: 11px; color: #ccc; line-height: 1.5;
+}
+.failed-detail.visible { display: block; }
+.failed-detail strong { color: #e74c3c; }
+
 #graph-container {
   position: fixed; top: 78px; left: 0; right: 0; bottom: 0;
 }
@@ -213,7 +234,16 @@ svg { width: 100%; height: 100%; }
     <label><input type="checkbox" id="toggle-helpers" checked> Helpers</label>
     <label><input type="checkbox" id="toggle-labels"> Labels</label>
     <label><input type="checkbox" id="toggle-legend"> Legend</label>
+    <div class="sep"></div>
+    <button class="refresh-btn" onclick="hardRefresh()" title="Clear cache and rebuild">⟳ Refresh</button>
     <div class="stats" id="stats"></div>
+    <span class="failed-warning" id="failed-warning" onclick="toggleFailedDetail()" style="display:none">⚠</span>
+    <div class="failed-detail" id="failed-detail">
+      <strong>Articles with failed metadata</strong><br>
+      These articles returned empty data (likely API rate-limiting).<br>
+      Try <a onclick="hardRefresh()" style="color:#f39c12;cursor:pointer">⟳ Refresh</a> to clear the cache and retry.
+      <div id="failed-list" style="margin-top:6px"></div>
+    </div>
     <span class="ua-warning" id="ua-warning" onclick="toggleUASettings()" title="User-Agent settings">⚙</span>
     <div class="ua-settings" id="ua-settings">
       <label>User-Agent for MediaWiki API requests</label>
@@ -562,6 +592,7 @@ function renderGraph(data) {
   document.getElementById("stats").textContent =
     `${data.meta.total_articles} articles · ${data.meta.total_nodes} nodes · ${data.meta.total_edges} connections`;
   showUAWarning(data.meta);
+  showFailedWarning(data.meta);
   document.getElementById("legend").classList.remove("visible");
   document.getElementById("toggle-legend").checked = false;
   document.getElementById("toggle-helpers").checked = true;
@@ -793,7 +824,7 @@ function clickNode(event, d) {
       connectedArticles.push({ id: sid, type: l.type });
   });
 
-  let html = `<span class="close" onclick="closePanel()">\u2715</span>`;
+  let html = "";
 
   if (d.type === "helper") {
     const helperLabel = d.label || d.id.replace(/^(cat:|ent:)/, "");
@@ -894,6 +925,68 @@ function showUAWarning(meta) {
     el.title = "Non-compliant User-Agent — may be rate-limited. Click to configure.";
   } else {
     el.style.display = "none";
+  }
+}
+function showFailedWarning(meta) {
+  const wrn = document.getElementById("failed-warning");
+  const det = document.getElementById("failed-detail");
+  const lst = document.getElementById("failed-list");
+  if (meta && meta.failed_count > 0) {
+    wrn.style.display = "inline-flex";
+    wrn.title = `${meta.failed_count} articles had failed metadata`;
+    lst.innerHTML = meta.failed_articles.map(n => escHtml(n)).join("<br>");
+  } else {
+    wrn.style.display = "none";
+    det.classList.remove("visible");
+  }
+}
+function toggleFailedDetail() {
+  document.getElementById("failed-detail").classList.toggle("visible");
+}
+async function hardRefresh() {
+  if (currentSource) { currentSource = null; }
+  const parts = picker.value.split("-");
+  if (parts.length !== 3) return;
+  const params = new URLSearchParams({ year: parts[0], month: String(parseInt(parts[1])), day: String(parseInt(parts[2])) });
+  const ua = loadUA();
+  if (ua) params.set("user_agent", ua);
+  if (ignoreList.length > 0) params.set("ignore", ignoreList.join(","));
+  params.set("refresh", "1");
+  showProgress("Clearing cache and rebuilding...");
+  try {
+    const resp = await fetch(`/api/graph?${params.toString()}`);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const data = JSON.parse(line);
+        if (data.type === "graph") {
+          reader.cancel();
+          hideProgress();
+          renderGraph(data.data);
+          applyFilters();
+          return;
+        } else if (data.type === "error") {
+          reader.cancel();
+          hideProgress();
+          document.getElementById("loading-indicator").textContent = "Refresh failed";
+          return;
+        } else if (data.type === "progress") {
+          showProgress(data.message);
+        }
+      }
+    }
+    hideProgress();
+  } catch (e) {
+    hideProgress();
+    document.getElementById("loading-indicator").textContent = "Refresh failed";
   }
 }
 </script>

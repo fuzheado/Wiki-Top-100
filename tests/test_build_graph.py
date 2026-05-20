@@ -329,3 +329,11 @@ class TestUserAgent:
         assert "user_agent" in result["meta"]
         assert "ua_compliant" in result["meta"]
         assert result["meta"]["ua_compliant"] is True
+
+    def test_meta_includes_failed_articles(self):
+        with patch("build_graph.fetch_top100", return_value=[]), \
+             patch("build_graph.asyncio.run", return_value={}):
+            result = build_graph("2026", "5", "17")
+        assert "failed_articles" in result["meta"]
+        assert "failed_count" in result["meta"]
+        assert result["meta"]["failed_count"] == 0

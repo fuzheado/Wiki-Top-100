@@ -591,12 +591,15 @@ def build_graph(year, month, day, min_entity_share=3, verbose=True, ignore_artic
     metadata = asyncio.run(fetch_all_metadata(titles, max_concurrent=MAX_CONCURRENT, progress_callback=progress_callback, headers=headers))
     log(f"Got metadata for {len(metadata)} articles")
 
+    failed_articles = []
     for a in articles:
         meta = metadata.get(a["id"], {})
         all_cats = meta.get("categories", [])
         a["categories"] = [c for c in all_cats if is_meaningful_category(c)]
         a["links"] = meta.get("links", [])
         a["extract"] = meta.get("extract", "")
+        if not all_cats and not a["links"] and len(a["extract"]) < 50:
+            failed_articles.append(a["title"])
 
     meaningful_cat_count = sum(len(a["categories"]) for a in articles)
     link_count_total = sum(len(a["links"]) for a in articles)
@@ -632,6 +635,8 @@ def build_graph(year, month, day, min_entity_share=3, verbose=True, ignore_artic
             "total_edges": len(links_data),
             "user_agent": ua,
             "ua_compliant": ua_ok,
+            "failed_articles": failed_articles,
+            "failed_count": len(failed_articles),
         },
         "nodes": nodes_data,
         "links": links_data,
