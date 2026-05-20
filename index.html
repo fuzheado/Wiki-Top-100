@@ -405,6 +405,7 @@ function setupOnce() {
   document.getElementById("spacing").addEventListener("input", function() {
     spacingValue = parseInt(this.value);
     if (simulation) updateSpacing(spacingValue);
+    syncUrl();
   });
 
   document.getElementById("ignore-input").addEventListener("keydown", function(e) {
@@ -435,15 +436,18 @@ function setupOnce() {
   document.getElementById("toggle-helpers").addEventListener("change", function() {
     if (!node || !link) return;
     applyFilters();
+    syncUrl();
   });
 
   document.getElementById("toggle-labels").addEventListener("change", function() {
     if (!nodeGroup) return;
     nodeGroup.selectAll(".node text").style("display", this.checked ? null : "none");
+    syncUrl();
   });
 
   document.getElementById("toggle-legend").addEventListener("change", function() {
     document.getElementById("legend").classList.toggle("visible", this.checked);
+    syncUrl();
   });
 
   document.getElementById("search").addEventListener("input", function() {
@@ -512,15 +516,62 @@ function removeIgnoreItem(item) {
 }
 
 function updateIgnoreUrl() {
-  const params = new URLSearchParams(window.location.search);
-  if (ignoreList.length > 0) {
-    params.set("ignore", ignoreList.join(","));
-  } else {
-    params.delete("ignore");
-  }
+  syncUrl();
+}
+
+function syncUrl() {
+  const params = new URLSearchParams();
+  const parts = picker.value.split("-");
+  if (parts.length === 3) params.set("date", picker.value);
+  if (ignoreList.length > 0) params.set("ignore", ignoreList.join(","));
+  if (spacingValue !== 27) params.set("spacing", String(spacingValue));
+  if (!document.getElementById("toggle-helpers").checked) params.set("helpers", "0");
+  if (!document.getElementById("toggle-labels").checked) params.set("labels", "0");
+  if (document.getElementById("toggle-legend").checked) params.set("legend", "1");
+  const imgSrc = loadImageSrc();
+  if (imgSrc !== "hatnote") params.set("image", imgSrc);
+  const speed = loadPlaybackSpeed();
+  if (speed !== 3000) params.set("speed", String(speed / 1000));
   const qs = params.toString();
   const newUrl = window.location.pathname + (qs ? "?" + qs : "");
   window.history.replaceState({}, "", newUrl);
+}
+
+function applyPreGraphParams(params) {
+  if (params.has("image")) {
+    localStorage.setItem("wiki_image_source", params.get("image"));
+    document.getElementById("img-src-btn").textContent = params.get("image") === "page" ? "📷 Article" : "📷 Hatnote";
+  }
+  if (params.has("speed")) {
+    localStorage.setItem("wiki_playback_speed", parseInt(params.get("speed")) * 1000);
+    document.getElementById("speed-btn").textContent = params.get("speed") + "s";
+  }
+  if (params.has("spacing")) {
+    spacingValue = parseInt(params.get("spacing"));
+    document.getElementById("spacing").value = spacingValue;
+  }
+}
+
+function applyPostRenderParams(params) {
+  if (params.has("helpers")) {
+    document.getElementById("toggle-helpers").checked = params.get("helpers") === "1";
+    document.getElementById("toggle-helpers").dispatchEvent(new Event("change"));
+  }
+  if (params.has("labels")) {
+    document.getElementById("toggle-labels").checked = params.get("labels") === "1";
+    document.getElementById("toggle-labels").dispatchEvent(new Event("change"));
+  }
+  if (params.has("legend")) {
+    document.getElementById("toggle-legend").checked = params.get("legend") === "1";
+    document.getElementById("toggle-legend").dispatchEvent(new Event("change"));
+  }
+  if (params.has("spacing") && simulation) {
+    updateSpacing(parseInt(params.get("spacing")));
+  }
+  syncUrl();
+  if (params.has("play")) {
+    setTimeout(() => togglePlayback(), 1500);
+  }
 }
 
 function applyFilters() {
@@ -561,8 +612,15 @@ const picker = document.getElementById("date-picker");
 document.getElementById("img-src-btn").textContent = loadImageSrc() === "page" ? "📷 Article" : "📷 Hatnote";
 document.getElementById("speed-btn").textContent = (loadPlaybackSpeed() / 1000) + "s";
 setupOnce();
+const urlParams = new URLSearchParams(window.location.search);
+applyPreGraphParams(urlParams);
 initIgnoreList();
-loadLatestDate();
+if (urlParams.has("date")) {
+  picker.value = urlParams.get("date");
+  onDateChange();
+} else {
+  loadLatestDate();
+}
 
 function formatDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -642,6 +700,7 @@ function onDateChange() {
   const parts = picker.value.split("-");
   if (parts.length === 3) {
     document.getElementById("loading-indicator").textContent = "";
+    syncUrl();
     fetchGraph(parts[0], String(parseInt(parts[1])), String(parseInt(parts[2])))
       .then(data => { renderGraph(data); applyFilters(); })
       .catch(() => { hideProgress(); document.getElementById("loading-indicator").textContent = "No data for this date"; });
@@ -671,6 +730,7 @@ function renderGraph(data) {
   buildLegend();
   initGraph(data);
   document.getElementById("toggle-labels").dispatchEvent(new Event("change"));
+  applyPostRenderParams(new URLSearchParams(window.location.search));
 }
 
 function buildLegend() {
@@ -1035,6 +1095,7 @@ function cyclePlaybackSpeed() {
   const next = speeds[(idx + 1) % speeds.length];
   localStorage.setItem("wiki_playback_speed", next);
   document.getElementById("speed-btn").textContent = (next / 1000) + "s";
+  syncUrl();
 }
 
 function fmtViews(v) {
@@ -1125,6 +1186,7 @@ function toggleImageSrc() {
   const next = cur === "hatnote" ? "page" : "hatnote";
   localStorage.setItem("wiki_image_source", next);
   document.getElementById("img-src-btn").textContent = next === "page" ? "📷 Article" : "📷 Hatnote";
+  syncUrl();
   if (graphData) refetchWithIgnore();
 }
 function getArticleImage(d) {
