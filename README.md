@@ -7,18 +7,18 @@ An interactive visualization of the top 100 most popular English Wikipedia artic
 ## How It Works
 
 ```
-top.hatnote.com API  ──►  build_graph.py  ──►  graph_data.json  ──►  index.html
-  (top 100 list)           (Python pipeline)       (static graph)      (D3.js viz)
+top.hatnote.com API  ──►  build_graph.py  ──►  NDJSON stream  ──►  index.html
+  (top 100 list)           (Python pipeline)      (progress + data)     (D3.js viz)
 ```
 
 1. **Fetch** the top 100 from `https://top.hatnote.com/en/wikipedia/{year}/{month}/{day}.json`
-2. **Enrich** each article by fetching its categories, internal links, and intro text from the MediaWiki API (async, 5 concurrent calls)
+2. **Enrich** each article by fetching its categories, internal links, and intro text from the MediaWiki API (async, 3 concurrent calls, with exponential backoff on retry)
 3. **Analyze** with spaCy NER to extract people, organizations, places, and events from summaries
 4. **Build** a graph with three connection types:
    - **Wikilinks** (purple) — direct `[[links]]` between top 100 articles
    - **Categories** (green) — shared meaningful Wikipedia categories
    - **Entities** (orange) — shared named entities (companies, people, places)
-5. **Visualize** with a D3.js force-directed graph
+5. **Visualize** with a D3.js force-directed graph; pipeline progress streamed to the UI via NDJSON
 
 ## Usage
 
@@ -28,6 +28,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python3 -m spacy download en_core_web_sm
+
+# Run tests
+python3 -m pytest tests/
+
+# Copy and customize config (optional)
+cp .env.example .env
+# Edit .env to set your contact email, API endpoints, etc.
 
 # Build graph for today (CLI)
 python3 build_graph.py
@@ -49,11 +56,11 @@ python3 -m http.server 8080
 
 ## Configuration
 
-All settings are optional and configured via environment variables:
+All settings are optional. Set them via environment variables, a `.env` file (see `.env.example`), or directly in the UI.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WIKI_USER_AGENT` | `WikiTop100Viz/1.0` | User-Agent header for API requests |
+| `WIKI_USER_AGENT` | `WikiTop100Viz/1.0 (contact: ...)` | User-Agent for MW API (must include email/URL, or you'll be rate-limited) |
 | `WIKI_HATNOTE_URL` | `https://top.hatnote.com/...` | Hatnote API endpoint template |
 | `WIKI_MW_API` | `https://en.wikipedia.org/w/api.php` | MediaWiki API endpoint |
 | `WIKI_MAX_CONCURRENT` | `3` | Concurrent async HTTP requests |
@@ -63,7 +70,7 @@ All settings are optional and configured via environment variables:
 
 Example:
 ```bash
-WIKI_MAX_CONCURRENT=10 WIKI_CACHE_DIR=/tmp/wiki-cache python3 server.py
+WIKI_USER_AGENT="MyViz/1.0 (me@example.com)" WIKI_MAX_CONCURRENT=5 python3 server.py
 ```
 
 ## Visualization Controls
@@ -74,11 +81,19 @@ WIKI_MAX_CONCURRENT=10 WIKI_CACHE_DIR=/tmp/wiki-cache python3 server.py
 | Helpers toggle | Show/hide category and entity helper nodes |
 | Labels toggle | Show/hide all node labels |
 | Legend toggle | Show/hide the color legend |
+| Spacing slider | Adjust force simulation repulsion |
+| Date picker | Select any date (triggers live rebuild with progress overlay) |
+| Ignore list | Add articles to exclude; persisted in URL (`?ignore=`) |
+| Hide buttons | One-click filters (Social media apps, Geography cluster) |
+| UA settings | Click ⚙ to view/change User-Agent; non-compliant agents trigger a warning |
 | Hover | Highlight connected subgraph + tooltip |
 | Click (article) | Open side panel with summary and connections |
+| Click (helper) | Open side panel with connected article list |
 | Drag | Reposition nodes |
 | Scroll | Zoom in/out |
 | Pan | Click and drag background |
+
+During pipeline execution, a progress overlay shows each step: fetching top 100, per-article metadata (e.g., "45/100"), NER, and graph assembly.
 
 ## Dependencies
 
@@ -91,12 +106,13 @@ WIKI_MAX_CONCURRENT=10 WIKI_CACHE_DIR=/tmp/wiki-cache python3 server.py
 
 ```
 .
+├── .env.example         # Environment variable reference (copy to .env)
 ├── build_graph.py       # Python pipeline: fetch → parse → analyze → export
-├── server.py            # HTTP server with /api/graph endpoint (date picker support)
+├── server.py            # HTTP server with /api/graph endpoint (streaming NDJSON)
 ├── index.html           # D3.js force-directed graph visualization
 ├── graph_data.json      # Pre-built graph data (gitignored, run build_graph.py to generate)
 ├── requirements.txt     # Python dependencies
-├── tests/               # pytest test suite
+├── tests/               # pytest test suite (35 tests)
 ├── .venv/               # Python virtual environment
 ├── .cache/              # Cached API responses (gitignored, auto-created)
 ├── README.md            # This file

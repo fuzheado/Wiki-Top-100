@@ -14,11 +14,15 @@
   - **Entity helpers** — shared named entities like "Netflix", "EBU", "the Ultimate Fighting Championship" (~21 helpers)
 - Exports to `graph_data.json` (~172 nodes, ~396 edges for a typical day)
 - Can be called programmatically via `build_graph()` for server mode
+- **Exponential backoff** on MW API retries (0.5s, 1s, 2s) for rate-limit resilience
+- **Concurrency reduced** from 5 to 3 to avoid triggering MW API rate limits
 
 ### Server (`server.py`)
-- Serves static files and provides `/api/graph?year=&month=&day=&min_entity=&ignore=` endpoint
-- Accepts query params for date, entity threshold, and article ignore list
-- Error handling wraps `build_graph()` calls — returns 500 JSON on failure instead of crashing
+- Serves static files and provides `/api/graph?year=&month=&day=&min_entity=&ignore=&user_agent=` endpoint
+- Accepts query params for date, entity threshold, article ignore list, and User-Agent override
+- **Streams pipeline progress** as newline-delimited JSON (NDJSON) with `Connection: close`
+- Per-article progress reporting (e.g., "Fetched article metadata (45/100)")
+- Error handling sends SSE error events instead of crashing
 
 ### Visualization (`index.html`)
 - D3.js v7 force-directed graph with draggable, zoomable, pannable canvas
@@ -29,6 +33,8 @@
 - Click on articles or helpers opens a side panel with summary, connections, and Wikipedia link
 - Search bar filters articles by name in real-time
 - **Date picker**: Select any date to re-fetch the graph from the server API
+- **Progress overlay**: Centered spinner with live step-by-step status during pipeline execution
+- **UA settings**: Click ⚙ to view/change User-Agent; non-compliant agents show a warning
 - **Spacing slider**: Adjust force simulation charge strength
 - **Ignore list**: Add/remove article titles to exclude from the graph (persisted in URL as `?ignore=`)
 - **Hide buttons**: One-click toggles for pre-defined groups (Social media apps, Geography cluster)
@@ -38,14 +44,25 @@
 ### Caching (`.cache/`)
 - File-based, two-layer cache: `hatnote/{date}.json` (24h TTL) and `mw/{article_id}.json` (7d TTL)
 - Avoids redundant API calls on repeated builds for the same day
+- Empty/failed results are NOT cached, so rate-limited articles retry on subsequent builds
 - Configurable via `WIKI_CACHE_DIR`, `WIKI_HATNOTE_CACHE_TTL`, `WIKI_MW_CACHE_TTL` env vars
 
 ### Configuration
 - All key settings configurable via environment variables (see README for full table)
+- `.env` file support (stdlib-only parser, no `python-dotenv` dependency)
+- `.env.example` provided as a reference
 - User-Agent, API endpoints, concurrency, cache paths all overridable without editing source
 
+### User-Agent Compliance
+- Built-in `_is_valid_ua()` check: scans for email (`user@host`) or URL (`https://...`)
+- **CLI warning**: prints to stderr if UA is non-compliant
+- **UI warning**: ⚙ gear icon lights up when graph meta reports `ua_compliant: false`
+- **UI override**: users can set a custom UA via the settings panel (stored in localStorage, sent as `user_agent` query param)
+- Default UA: `WikiTop100Viz/1.0 (contact: andrew.lih@gmail.com)` — compliant with Wikimedia policy
+
 ### Testing
-- pytest test suite at `tests/` with 28 tests covering: category filtering, cluster assignment, entity normalization, cache roundtrip, HTTP retry, graph construction, and serialization
+- pytest test suite at `tests/` with **35 tests** covering: category filtering, cluster assignment, entity normalization, cache roundtrip, HTTP retry, graph construction, serialization, progress callback, and UA compliance
+- Run with: `python3 -m pytest tests/`
 
 ### Documentation
 - `README.md` — project overview, architecture diagram, setup and usage instructions, configuration reference
@@ -56,6 +73,8 @@
 ## 2. What's Outstanding
 
 ### Near-term (single-session additions)
+- **Date picker connection lifecycle**: On page reload with cached JS, the `loadLatestDate` loop may fail to find a working date, showing "No recent data found" even though data exists. Root cause is likely a race between cache expiration, rate-limit cooldown, and the browser tab's connection state. Needs debugging of the EventSource/NDJSON stream lifecycle.
+- **Rate-limit recovery**: When the MW API rate-limits the builder, failed articles return empty data. The cache correctly avoids storing empty results, but subsequent builds immediately retry and may hit the same rate limit. A backoff strategy across build attempts (not just per-request) would help.
 - **Category helper quality**: Some borderline categories still slip through the filter (e.g., "Casting controversies in film", "American IMAX films"). The `MAINT_CAT_PATTERNS` regex list needs periodic expansion as new patterns emerge.
 - **Image loading reliability**: The D3.js code supports thumbnail images in article nodes, but many articles don't have usable images from the MediaWiki API. A fallback to pull images from the Hatnote data (which includes `image_url`) already exists but could be more consistent.
 - **Full shareable URLs**: The `?ignore=` param is shareable but `?date=` and `?min_entity=` are not yet persisted in the URL on date change.
@@ -78,10 +97,10 @@
 ## 3. Key Decisions
 
 ### Per-article MediaWiki API queries instead of batched queries
-The MediaWiki API's `pllimit` parameter (max 500 per call for non-bot users) is shared across all titles in a batch request. With 50 articles per batch and each article having ~150 outgoing links, the 500-link limit is exhausted before even the second article in the batch is fully processed. Per-article queries give each article its own 500-link budget, ensuring all links are captured. The cost — 100 sequential API calls — is mitigated by async concurrency (5 at a time, completing in ~15 seconds).
+The MediaWiki API's `pllimit` parameter (max 500 per call for non-bot users) is shared across all titles in a batch request. With 50 articles per batch and each article having ~150 outgoing links, the 500-link limit is exhausted before even the second article in the batch is fully processed. Per-article queries give each article its own 500-link budget, ensuring all links are captured. The cost — 100 sequential API calls — is mitigated by async concurrency (3 at a time, completing in ~20 seconds).
 
 ### Async HTTP with httpx instead of synchronous requests
-Synchronous requests would sequence 100 API calls at ~1 second each (including network latency and the required 0.1s delay between requests), totaling ~100 seconds. Async with 5 concurrent workers completes in ~15 seconds. The `asyncio.Semaphore(5)` pattern prevents overwhelming the API while keeping the client code simple — no thread pools or callback chains needed.
+Synchronous requests would sequence 100 API calls at ~1 second each (including network latency), totaling ~100 seconds. Async with 3 concurrent workers completes in ~20 seconds. The `asyncio.Semaphore(3)` pattern prevents overwhelming the API while keeping the client code simple — no thread pools or callback chains needed.
 
 ### NetworkX for graph construction instead of direct JSON construction
 NetworkX provides a clean abstraction for graph operations (add nodes with metadata, query neighbors, serialize subgraphs). The graph construction happens incrementally: articles are added as nodes, then wikilink edges, then category helpers, then entity helpers. NetworkX's edge deduplication and metadata merging avoid manual bookkeeping. The export format maps directly to the D3.js JSON schema.
@@ -115,3 +134,9 @@ With only ~7 settings (API endpoints, concurrency, cache paths), a config file (
 
 ### server.py as a stdlib HTTP server instead of FastAPI/Flask
 The visualization needs exactly one dynamic endpoint (`/api/graph`) and static file serving. Python's `http.server` handles both with zero dependencies and ~60 lines of code. A framework would add startup latency, dependency weight, and complexity for no benefit at this scale. If the server grows more endpoints (e.g., saved graphs, user annotations), migration to FastAPI would be straightforward — the `build_graph()` function already returns JSON-serializable dicts independently of the HTTP layer.
+
+### NDJSON streaming with `Connection: close` instead of SSE or polling
+Server-Sent Events (SSE) would be the textbook choice for streaming progress, but `SimpleHTTPRequestHandler` doesn't support persistent connections well — it tries to read the next HTTP request after `do_GET()` returns. Newline-delimited JSON (`application/x-ndjson`) with `Connection: close` is simpler: each JSON object is one line, and closing the connection after the final graph event signals the browser that the stream is complete. The frontend uses `fetch()` + `ReadableStream.getReader()` to parse lines incrementally. This avoids SSE quirks (reconnection, content-type enforcement, keep-alive) and EventSource limitations (no custom headers, GET-only).
+
+### Built-in User-Agent compliance check instead of relying on documentation
+Wikimedia's User-Agent policy requires a contact method (email or URL) in the User-Agent string. Non-compliant agents are silently rate-limited, which is confusing to debug. The `_is_valid_ua()` regex check runs before every `build_graph()` call and warns both on stdout (CLI) and in the UI (graph meta includes `ua_compliant` boolean). The settings panel lets users override the UA at runtime (stored in localStorage) without editing source code or restarting the server. The `.env` file is the recommended permanent configuration path.
