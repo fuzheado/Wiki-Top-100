@@ -4,7 +4,7 @@ An interactive visualization of the top 100 most popular English Wikipedia artic
 
 **Live example data**: May 17, 2026 — 100 articles, 72 helper nodes, 396 connections.
 
-![](screenshot-wiki.png)
+![](screenshot-detail.png)
 
 ## How It Works
 
@@ -123,7 +123,7 @@ All UI state can be set via URL query parameters for bookmarking and sharing:
 
 Example:
 ```
-http://localhost:8080/?date=2026-05-17&labels=0&speed=5&play=1
+http://localhost:8080/?play=1&date=2026-05-17&speed=5&zoom=2&fontsize=7&order=random
 ```
 
 ## Dependencies

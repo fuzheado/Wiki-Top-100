@@ -36,7 +36,11 @@
 - Click on articles or helpers opens a side panel with summary, connections, and Wikipedia link
 - Search bar filters articles by name in real-time
 - **Date picker + ◀ ▶ nav buttons**: Navigate between days, triggers live rebuild with progress overlay
-- **Playback mode** (▶/⏹): auto-advances through articles #1–#100 with 3s default interval, smooth centering on each node, highlights connected subgraph, opens side panel. Speed cycles 2s/3s/5s/8s. Simulation is frozen during playback and restarted on stop.
+- **Playback mode** (▶/⏹): auto-advances through articles with smooth centering, highlights connected subgraph, opens side panel. Simulation frozen during playback, restarted on stop. Configurable:
+  - **Speed**: cycles 2s/3s/5s/8s per node
+  - **Zoom**: cycles 0.5x/1x/1.5x/2x/3x centering zoom level
+  - **Order**: toggle between rank order (🔢 Rank) and Fisher-Yates shuffle (🎲 Random)
+- **🔍 Font size**: cycles 7/8/9/10/12/14px for node labels
 - **Progress overlay**: Centered spinner with live step-by-step status during pipeline execution
 - **UA settings**: Click ⚙ to view/change User-Agent; non-compliant agents show a warning
 - **📷 Image source toggle**: Switch between Hatnote and Wikipedia article thumbnails (stored in localStorage). Pre-validates image URLs with HTML `Image()` constructor — broken images fall back to colored circle.
@@ -70,7 +74,7 @@
 
 ### URL Parameters
 - All UI state is reflected in URL query parameters and updated on every interaction via `syncUrl()`
-- Parameters: `date`, `ignore`, `spacing`, `helpers`, `labels`, `legend`, `image`, `speed`, `play`
+- Parameters: `date`, `ignore`, `spacing`, `helpers`, `labels`, `legend`, `image`, `speed`, `zoom`, `fontsize`, `order`, `play`
 - `play=1` auto-starts playback 1.5s after graph render
 - `applyPreGraphParams()` sets pre-render state (image source, speed, spacing slider value)
 - `applyPostRenderParams()` applies graph-dependent state after each `renderGraph()` call (toggles, spacing to simulation, auto-play)
