@@ -6,3 +6,5 @@ graph_data.json
 screenshot.png
 wikitop100_viz.png
 final_screenshot.png
+.cache/
+.env

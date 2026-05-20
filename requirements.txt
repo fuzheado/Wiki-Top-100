@@ -1,3 +1,4 @@
 httpx>=0.28
 networkx>=3
 spacy>=3.8
+pytest>=8

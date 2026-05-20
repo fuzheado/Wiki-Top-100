@@ -3,7 +3,7 @@
 
 Endpoints:
   GET /                     → index.html (static files)
-  GET /api/graph?year=2026&month=5&day=18  → runs the pipeline, returns graph JSON
+  GET /api/graph?year=2026&month=5&day=18  → SSE stream: progress events, then graph data
 
 Usage:
   python3 server.py [port]
@@ -30,17 +30,30 @@ class GraphAPIHandler(SimpleHTTPRequestHandler):
                 min_entity = int(params.get("min_entity", ["3"])[0])
                 ignore_raw = params.get("ignore", [None])[0]
                 ignore_list = ignore_raw.split(",") if ignore_raw else None
+                user_agent = params.get("user_agent", [None])[0]
             except (ValueError, KeyError):
                 self.send_error(400, "Invalid parameters")
                 return
 
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
 
-            graph_data = build_graph(year, month, day, min_entity_share=min_entity, ignore_articles=ignore_list)
-            self.wfile.write(json.dumps(graph_data).encode())
+            def write_json(obj):
+                self.wfile.write((json.dumps(obj) + "\n").encode())
+                self.wfile.flush()
+
+            try:
+                write_json({"type": "progress", "message": "Fetching top 100..."})
+                graph_data = build_graph(year, month, day, min_entity_share=min_entity,
+                                         ignore_articles=ignore_list, progress_callback=lambda m: write_json({"type": "progress", "message": m}),
+                                         user_agent=user_agent)
+                write_json({"type": "graph", "data": graph_data})
+            except Exception as e:
+                write_json({"type": "error", "message": str(e)})
             return
 
         return super().do_GET()

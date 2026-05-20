@@ -40,6 +40,29 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 #controls .loading { font-size: 11px; color: #fdcb6e; margin-left: 4px; }
 #controls .stats { font-size: 11px; color: #555; margin-left: auto; white-space: nowrap; }
 
+.ua-warning {
+  font-size: 11px; color: #f39c12; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.ua-warning:hover { color: #fdcb6e; }
+.ua-settings {
+  display: none; position: absolute; top: 100%; right: 0; z-index: 200;
+  background: rgba(30,30,50,0.98); border: 1px solid #555; border-radius: 6px;
+  padding: 12px 16px; min-width: 380px; margin-top: 2px;
+}
+.ua-settings.visible { display: block; }
+.ua-settings label { font-size: 11px; color: #aaa; display: block; margin-bottom: 4px; }
+.ua-settings input[type=text] {
+  width: 100%; background: #2a2a4a; border: 1px solid #444; color: #e0e0e0;
+  padding: 4px 8px; border-radius: 4px; font-size: 12px; outline: none;
+}
+.ua-settings input[type=text]:focus { border-color: #6c5ce7; }
+.ua-settings .hint { font-size: 10px; color: #666; margin-top: 4px; line-height: 1.4; }
+.ua-settings .btn {
+  margin-top: 8px; padding: 3px 12px; border: 1px solid #6c5ce7; border-radius: 4px;
+  background: #6c5ce7; color: #fff; font-size: 11px; cursor: pointer;
+}
+
 .spacing-slider {
   display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; flex-shrink: 0;
 }
@@ -145,6 +168,25 @@ svg { width: 100%; height: 100%; }
 #legend .line-swatch { width: 20px; height: 2px; flex-shrink: 0; }
 #legend .helper-swatch { width: 10px; height: 10px; border-radius: 50%;
     border: 1px dashed #666; background: #b0b0b0; opacity: 0.6; flex-shrink: 0; }
+
+#progress-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 300; display: none; align-items: center; justify-content: center;
+  background: rgba(26,26,46,0.75);
+}
+#progress-overlay.visible { display: flex; }
+#progress-box {
+  background: rgba(0,0,0,0.88); border: 1px solid #555; border-radius: 10px;
+  padding: 28px 36px; text-align: center; min-width: 300px;
+}
+.progress-spinner {
+  width: 36px; height: 36px; border: 3px solid #333;
+  border-top-color: #6c5ce7; border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin: 0 auto 14px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#progress-message { font-size: 13px; color: #ccc; }
+#progress-step { font-size: 11px; color: #666; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -167,6 +209,15 @@ svg { width: 100%; height: 100%; }
     <label><input type="checkbox" id="toggle-labels"> Labels</label>
     <label><input type="checkbox" id="toggle-legend"> Legend</label>
     <div class="stats" id="stats"></div>
+    <span class="ua-warning" id="ua-warning" onclick="toggleUASettings()" title="User-Agent settings">⚙</span>
+    <div class="ua-settings" id="ua-settings">
+      <label>User-Agent for MediaWiki API requests</label>
+      <input type="text" id="ua-input" placeholder="AppName/1.0 (contact: email@example.com)">
+      <div class="hint">Wikimedia requires a contact method (email or URL) in the User-Agent string.
+      Non-compliant agents may be heavily rate-limited.
+      <br>Set <code>WIKI_USER_AGENT</code> in <code>.env</code> or export it as an env var to make this permanent.</div>
+      <button class="btn" onclick="saveUA()">Apply</button>
+    </div>
   </div>
 
   <div class="controls-row">
@@ -201,6 +252,14 @@ svg { width: 100%; height: 100%; }
 
 <div id="legend"></div>
 
+<div id="progress-overlay">
+  <div id="progress-box">
+    <div class="progress-spinner"></div>
+    <div id="progress-message">Loading...</div>
+    <div id="progress-step"></div>
+  </div>
+</div>
+
 <script>
 const WIDTH = window.innerWidth;
 const HEIGHT = window.innerHeight - 78;
@@ -221,6 +280,14 @@ let container;
 let ignoreList = [];
 let activeFilters = new Set();
 let spacingValue = 27;
+
+function showProgress(msg) {
+  document.getElementById("progress-overlay").classList.add("visible");
+  document.getElementById("progress-message").textContent = msg || "Loading...";
+}
+function hideProgress() {
+  document.getElementById("progress-overlay").classList.remove("visible");
+}
 
 let zoom = d3.zoom().scaleExtent([0.1, 8]).on("zoom", event => {
   container.attr("transform", event.transform);
@@ -400,50 +467,79 @@ async function loadLatestDate() {
   let d = new Date();
   for (let attempt = 0; attempt < 7; attempt++) {
     picker.value = formatDate(d);
-    const ok = await fetchGraph(
-      String(d.getFullYear()),
-      String(d.getMonth() + 1),
-      String(d.getDate())
-    );
-    if (ok) return;
-    d.setDate(d.getDate() - 1);
+    try {
+      const data = await fetchGraph(
+        String(d.getFullYear()),
+        String(d.getMonth() + 1),
+        String(d.getDate())
+      );
+      renderGraph(data);
+      applyFilters();
+      return;
+    } catch (e) {
+      console.warn(`No data for ${formatDate(d)}, trying previous day`);
+      d.setDate(d.getDate() - 1);
+    }
   }
   document.getElementById("loading-indicator").textContent = "No recent data found";
 }
 
 async function fetchGraph(year, month, day) {
-  const loading = document.getElementById("loading-indicator");
-  loading.textContent = "Loading...";
-  try {
-    const params = new URLSearchParams({ year, month, day });
-    if (ignoreList.length > 0) {
-      params.set("ignore", ignoreList.join(","));
-    }
-    const resp = await fetch(`/api/graph?${params.toString()}`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    loading.textContent = "";
-    renderGraph(data);
-    applyFilters();
-    return true;
-  } catch (e) {
-    loading.textContent = "";
-    console.warn(`No data for ${year}/${month}/${day}, trying previous day`);
-    return false;
+  const params = new URLSearchParams({ year, month, day });
+  const ua = loadUA();
+  if (ua) params.set("user_agent", ua);
+  if (ignoreList.length > 0) {
+    params.set("ignore", ignoreList.join(","));
   }
+  showProgress("Fetching top 100...");
+  const resp = await fetch(`/api/graph?${params.toString()}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const data = JSON.parse(line);
+      if (data.type === "graph") {
+        reader.cancel();
+        hideProgress();
+        return data.data;
+      } else if (data.type === "error") {
+        reader.cancel();
+        hideProgress();
+        throw new Error(data.message);
+      } else if (data.type === "progress") {
+        showProgress(data.message);
+        document.getElementById("progress-step").textContent = "";
+      }
+    }
+  }
+  hideProgress();
+  throw new Error("Incomplete stream");
 }
 
 function refetchWithIgnore() {
   const parts = picker.value.split("-");
   if (parts.length === 3) {
-    fetchGraph(parts[0], String(parseInt(parts[1])), String(parseInt(parts[2])));
+    fetchGraph(parts[0], String(parseInt(parts[1])), String(parseInt(parts[2])))
+      .then(data => { renderGraph(data); applyFilters(); })
+      .catch(() => { hideProgress(); document.getElementById("loading-indicator").textContent = "No data for this date"; });
   }
 }
 
 function onDateChange() {
   const parts = picker.value.split("-");
   if (parts.length === 3) {
-    fetchGraph(parts[0], String(parseInt(parts[1])), String(parseInt(parts[2])));
+    document.getElementById("loading-indicator").textContent = "";
+    fetchGraph(parts[0], String(parseInt(parts[1])), String(parseInt(parts[2])))
+      .then(data => { renderGraph(data); applyFilters(); })
+      .catch(() => { hideProgress(); document.getElementById("loading-indicator").textContent = "No data for this date"; });
   }
 }
 
@@ -451,6 +547,7 @@ function renderGraph(data) {
   graphData = data;
   document.getElementById("stats").textContent =
     `${data.meta.total_articles} articles · ${data.meta.total_nodes} nodes · ${data.meta.total_edges} connections`;
+  showUAWarning(data.meta);
   document.getElementById("legend").classList.remove("visible");
   document.getElementById("toggle-legend").checked = false;
   document.getElementById("toggle-helpers").checked = true;
@@ -752,6 +849,37 @@ function escHtml(s) {
   const div = document.createElement("div");
   div.textContent = s;
   return div.innerHTML;
+}
+
+function loadUA() {
+  return localStorage.getItem("wiki_user_agent") || "";
+}
+function saveUA() {
+  const val = document.getElementById("ua-input").value.trim();
+  if (val) {
+    localStorage.setItem("wiki_user_agent", val);
+  } else {
+    localStorage.removeItem("wiki_user_agent");
+  }
+  document.getElementById("ua-settings").classList.remove("visible");
+  refetchWithIgnore();
+}
+function toggleUASettings() {
+  const panel = document.getElementById("ua-settings");
+  panel.classList.toggle("visible");
+  if (panel.classList.contains("visible")) {
+    const ua = loadUA();
+    document.getElementById("ua-input").value = ua;
+  }
+}
+function showUAWarning(meta) {
+  const el = document.getElementById("ua-warning");
+  if (meta && meta.ua_compliant === false) {
+    el.style.display = "inline-flex";
+    el.title = "Non-compliant User-Agent — may be rate-limited. Click to configure.";
+  } else {
+    el.style.display = "none";
+  }
 }
 </script>
 </body>

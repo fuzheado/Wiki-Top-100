@@ -6,15 +6,68 @@ categories, links, and intro text from the MediaWiki API, runs spaCy NER
 on summaries, and builds a NetworkX graph exported as JSON for the D3.js
 visualization in index.html.
 """
-import json, sys, math, time, collections, re, asyncio
+import json, sys, math, time, collections, re, asyncio, os
+from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
 import networkx as nx
 
-HATNOTE_URL = "https://top.hatnote.com/en/wikipedia/{year}/{month}/{day}.json"
-MW_API = "https://en.wikipedia.org/w/api.php"
-HEADERS = {"User-Agent": "WikiTop100Viz/1.0 (prototype; alih@example.com)"}
+
+def _load_dotenv():
+    """Load .env file if present, populating os.environ (does not override)."""
+    env_path = Path(".env")
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip("\"'")
+            os.environ.setdefault(key, val)
+
+_load_dotenv()
+
+
+def _is_valid_ua(ua):
+    """Check if a User-Agent string appears Wikimedia-compliant (has contact info).
+
+    Wikimedia requires User-Agent strings to include a way to contact the
+    developer — either an email address or a project URL. Returns True if
+    the string contains an email or http(s) URL.
+    """
+    return bool(re.search(r'[^@\s]+@[^@\s]+\.[^@\s]+|https?://\S+', ua))
+
+
+HATNOTE_URL = os.environ.get("WIKI_HATNOTE_URL",
+    "https://top.hatnote.com/en/wikipedia/{year}/{month}/{day}.json")
+MW_API = os.environ.get("WIKI_MW_API",
+    "https://en.wikipedia.org/w/api.php")
+_DEFAULT_UA = "WikiTop100Viz/1.0 (contact: andrew.lih@gmail.com)"
+HEADERS = {"User-Agent": os.environ.get("WIKI_USER_AGENT", _DEFAULT_UA)}
+MAX_CONCURRENT = int(os.environ.get("WIKI_MAX_CONCURRENT", "3"))
+CACHE_DIR = os.environ.get("WIKI_CACHE_DIR", ".cache")
+HATNOTE_CACHE_TTL = int(os.environ.get("WIKI_HATNOTE_CACHE_TTL", "86400"))  # 24h
+MW_CACHE_TTL = int(os.environ.get("WIKI_MW_CACHE_TTL", "604800"))  # 7d
+
+def _cache_get(cache_type, key, ttl):
+    """Load cached JSON if fresh, else return None."""
+    path = Path(CACHE_DIR, cache_type, key)
+    if not path.exists():
+        return None
+    if time.time() - path.stat().st_mtime > ttl:
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def _cache_set(cache_type, key, data):
+    """Save JSON to cache, creating directories as needed."""
+    path = Path(CACHE_DIR, cache_type, key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f)
+
 
 SKIP_PREFIXES = {"Special", "Wikipedia", "Talk", "User", "Help", "File", "Template",
                  "Category", "Portal", "Draft", "Module", "MediaWiki"}
@@ -137,12 +190,19 @@ CLUSTER_COLORS = {
 HELPER_COLOR = "#b0b0b0"
 
 
-def fetch_json(url):
-    """Fetch and parse JSON from a URL with a timeout and user-agent."""
-    with httpx.Client(headers=HEADERS, timeout=30.0) as client:
-        resp = client.get(url)
-        resp.raise_for_status()
-        return resp.json()
+def fetch_json(url, max_retries=2):
+    """Fetch and parse JSON from a URL with a timeout, user-agent, and retries."""
+    for attempt in range(max_retries + 1):
+        try:
+            with httpx.Client(headers=HEADERS, timeout=30.0) as client:
+                resp = client.get(url)
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as e:
+            if attempt < max_retries:
+                time.sleep(0.5)
+            else:
+                raise
 
 
 def is_meaningful_category(cat):
@@ -160,12 +220,17 @@ def is_meaningful_category(cat):
 
 
 def fetch_top100(year, month, day):
-    """Fetch the top 100 list from the Hatnote API.
+    """Fetch the top 100 list from the Hatnote API (cached for 24h).
 
     Filters out Special:, Wikipedia:, Talk:, and other non-article pages.
     Returns a list of dicts with id, title, rank, views, summary, image_url, url.
     Article IDs use underscores (matching Wikipedia URL convention).
     """
+    cache_key = f"{year}-{month}-{day}.json"
+    cached = _cache_get("hatnote", cache_key, HATNOTE_CACHE_TTL)
+    if cached is not None:
+        return cached
+
     url = HATNOTE_URL.format(year=year, month=month, day=day)
     data = fetch_json(url)
     articles = []
@@ -184,15 +249,23 @@ def fetch_top100(year, month, day):
             "url": a.get("url", f"https://en.wikipedia.org/wiki/{title}"),
             "history": a.get("history", []),
         })
+
+    _cache_set("hatnote", cache_key, articles)
     return articles
 
 
 async def fetch_single_metadata(client, title, sem):
     """Fetch categories, outgoing links (ns=0 only), and intro extract for one article.
 
+    Results are cached to disk (7-day TTL) to avoid redundant API calls.
     Uses an asyncio.Semaphore to cap concurrent requests. Retries up to 3 times
-    on failure. pllimit=500 is sufficient for each individual article.
+    with exponential backoff on failure. pllimit=500 is sufficient for each article.
     """
+    cache_key = f"{title}.json"
+    cached = _cache_get("mw", cache_key, MW_CACHE_TTL)
+    if cached is not None:
+        return title, cached
+
     async with sem:
         params = {
             "action": "query",
@@ -214,7 +287,9 @@ async def fetch_single_metadata(client, title, sem):
                 pages = data.get("query", {}).get("pages", {})
                 for pid, info in pages.items():
                     if int(pid) < 0:
-                        return title, {"categories": [], "links": [], "extract": ""}
+                        result = {"categories": [], "links": [], "extract": ""}
+                        _cache_set("mw", cache_key, result)
+                        return title, result
                     cats = []
                     for c in info.get("categories", []):
                         ct = c.get("title", "")
@@ -225,27 +300,43 @@ async def fetch_single_metadata(client, title, sem):
                         if l.get("ns") == 0:
                             links.append(l.get("title", "").replace(" ", "_"))
                     extract = info.get("extract", "")
-                    return title, {"categories": cats, "links": links, "extract": extract}
+                    result = {"categories": cats, "links": links, "extract": extract}
+                    _cache_set("mw", cache_key, result)
+                    return title, result
             except Exception as e:
+                delay = 0.5 * (2 ** attempt)
                 if attempt < 2:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(delay)
                 else:
                     print(f"  Failed to fetch {title}: {e}")
                     return title, {"categories": [], "links": [], "extract": ""}
         return title, {"categories": [], "links": [], "extract": ""}
 
 
-async def fetch_all_metadata(titles, max_concurrent=5):
+async def fetch_all_metadata(titles, max_concurrent=None, progress_callback=None, headers=None):
     """Fetch metadata for all articles concurrently with a concurrency limit.
 
+    Reports progress via progress_callback after each article completes.
+    Uses asyncio.as_completed to surface results incrementally.
     Returns a dict mapping article IDs to {categories, links, extract}.
-    Completes in ~15 seconds for 100 articles at 5 concurrent workers.
     """
+    if max_concurrent is None:
+        max_concurrent = MAX_CONCURRENT
+    if headers is None:
+        headers = HEADERS
     sem = asyncio.Semaphore(max_concurrent)
+    total = len(titles)
     async with httpx.AsyncClient(headers=HEADERS) as client:
         tasks = [fetch_single_metadata(client, t, sem) for t in titles]
-        results = await asyncio.gather(*tasks)
-    return dict(results)
+        results = {}
+        for i, coro in enumerate(asyncio.as_completed(tasks)):
+            title, meta = await coro
+            results[title] = meta
+            if progress_callback and (i + 1) % 5 == 0:
+                progress_callback(f"Fetched article metadata ({i + 1}/{total})")
+            elif progress_callback and i == 0:
+                progress_callback(f"Fetched article metadata ({i + 1}/{total})")
+        return results
 
 
 def assign_cluster(categories, summary):
@@ -458,16 +549,30 @@ def serialize_graph(G):
     return nodes_data, links_data
 
 
-def build_graph(year, month, day, min_entity_share=3, verbose=True, ignore_articles=None):
+def build_graph(year, month, day, min_entity_share=3, verbose=True, ignore_articles=None, progress_callback=None, user_agent=None):
     """Run the full pipeline: fetch → enrich → analyze → build → export.
 
     Returns the graph data dict with meta, nodes, and links keys.
     Can be called programmatically from server.py or as a CLI script.
+    Accepts an optional progress_callback(msg) for streaming status updates.
+    Accepts an optional user_agent override for MW API requests.
     """
     def log(msg):
         if verbose: print(msg)
+        if progress_callback:
+            progress_callback(msg)
+
+    ua = user_agent or HEADERS["User-Agent"]
+    if not _is_valid_ua(ua):
+        log("WARNING: User-Agent may not be Wikimedia-compliant (no email or URL).")
+        log("WARNING: Set WIKI_USER_AGENT env var or add .env file.")
+        log("WARNING: Non-compliant User-Agent strings may be rate-limited by the MediaWiki API.")
+    ua_ok = _is_valid_ua(ua)
+
+    headers = {"User-Agent": ua}
 
     log(f"Fetching top 100 for {year}/{month}/{day}...")
+    articles = fetch_top100(year, month, day)  # Uses module-level HEADERS for Hatnote (read-only, not rate-limited)
     articles = fetch_top100(year, month, day)
     if ignore_articles:
         ignore_set = {a.lower().replace(" ", "_") for a in ignore_articles}
@@ -483,7 +588,7 @@ def build_graph(year, month, day, min_entity_share=3, verbose=True, ignore_artic
 
     titles = [a["id"] for a in articles]
     log("Fetching article metadata (async, 5 concurrent)...")
-    metadata = asyncio.run(fetch_all_metadata(titles))
+    metadata = asyncio.run(fetch_all_metadata(titles, max_concurrent=MAX_CONCURRENT, progress_callback=progress_callback, headers=headers))
     log(f"Got metadata for {len(metadata)} articles")
 
     for a in articles:
@@ -525,6 +630,8 @@ def build_graph(year, month, day, min_entity_share=3, verbose=True, ignore_artic
             "total_articles": len(articles),
             "total_nodes": len(nodes_data),
             "total_edges": len(links_data),
+            "user_agent": ua,
+            "ua_compliant": ua_ok,
         },
         "nodes": nodes_data,
         "links": links_data,
@@ -550,9 +657,11 @@ def latest_available_date():
     d = date.today()
     for _ in range(7):
         url = HATNOTE_URL.format(year=d.year, month=d.month, day=d.day)
-        resp = httpx.get(url, headers=HEADERS, timeout=10)
-        if resp.status_code == 200:
+        try:
+            fetch_json(url)
             return str(d.year), str(d.month), str(d.day)
+        except Exception:
+            d -= timedelta(days=1)
     return "2026", "5", "18"
 
 

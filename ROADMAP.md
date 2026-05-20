@@ -13,6 +13,12 @@
   - **Category helpers** — shared meaningful Wikipedia categories like "2026 films", "UFC fighters" (~51 helpers)
   - **Entity helpers** — shared named entities like "Netflix", "EBU", "the Ultimate Fighting Championship" (~21 helpers)
 - Exports to `graph_data.json` (~172 nodes, ~396 edges for a typical day)
+- Can be called programmatically via `build_graph()` for server mode
+
+### Server (`server.py`)
+- Serves static files and provides `/api/graph?year=&month=&day=&min_entity=&ignore=` endpoint
+- Accepts query params for date, entity threshold, and article ignore list
+- Error handling wraps `build_graph()` calls — returns 500 JSON on failure instead of crashing
 
 ### Visualization (`index.html`)
 - D3.js v7 force-directed graph with draggable, zoomable, pannable canvas
@@ -20,28 +26,46 @@
 - Helper nodes: small gray circles with dashed borders, visually subordinate to article nodes
 - Edges: purple for wikilinks, green for categories, orange for entities, with thickness indicating weight
 - Hover highlights connected subgraph (fades everything else)
-- Click opens a side panel showing the article's rank, views, summary, cluster, image, and a list of connected articles with connection type indicators
+- Click on articles or helpers opens a side panel with summary, connections, and Wikipedia link
 - Search bar filters articles by name in real-time
+- **Date picker**: Select any date to re-fetch the graph from the server API
+- **Spacing slider**: Adjust force simulation charge strength
+- **Ignore list**: Add/remove article titles to exclude from the graph (persisted in URL as `?ignore=`)
+- **Hide buttons**: One-click toggles for pre-defined groups (Social media apps, Geography cluster)
 - Toggle controls for helper nodes, labels, and legend
+- Shareable URLs (`?ignore=Article1,Article2`)
+
+### Caching (`.cache/`)
+- File-based, two-layer cache: `hatnote/{date}.json` (24h TTL) and `mw/{article_id}.json` (7d TTL)
+- Avoids redundant API calls on repeated builds for the same day
+- Configurable via `WIKI_CACHE_DIR`, `WIKI_HATNOTE_CACHE_TTL`, `WIKI_MW_CACHE_TTL` env vars
+
+### Configuration
+- All key settings configurable via environment variables (see README for full table)
+- User-Agent, API endpoints, concurrency, cache paths all overridable without editing source
+
+### Testing
+- pytest test suite at `tests/` with 28 tests covering: category filtering, cluster assignment, entity normalization, cache roundtrip, HTTP retry, graph construction, and serialization
 
 ### Documentation
-- `README.md` — project overview, architecture diagram, setup and usage instructions
+- `README.md` — project overview, architecture diagram, setup and usage instructions, configuration reference
 - `AGENTS.md` — development evolution, architecture decisions with rationale, known issues and trade-offs, code conventions, future ideas
+- `ROADMAP.md` — this file, tracking current state and outstanding work
 - Docstrings on all Python functions covering purpose, parameters, return values, and design rationale
 
 ## 2. What's Outstanding
 
 ### Near-term (single-session additions)
-- **Date picker**: Allow users to select any date and re-fetch the graph. The backend already accepts date arguments (`python3 build_graph.py 2026 5 17`). The frontend needs a date input that triggers a rebuild or loads a pre-built JSON.
 - **Category helper quality**: Some borderline categories still slip through the filter (e.g., "Casting controversies in film", "American IMAX films"). The `MAINT_CAT_PATTERNS` regex list needs periodic expansion as new patterns emerge.
 - **Image loading reliability**: The D3.js code supports thumbnail images in article nodes, but many articles don't have usable images from the MediaWiki API. A fallback to pull images from the Hatnote data (which includes `image_url`) already exists but could be more consistent.
+- **Full shareable URLs**: The `?ignore=` param is shareable but `?date=` and `?min_entity=` are not yet persisted in the URL on date change.
 
 ### Medium-term
 - **Navigation box parsing**: Wikipedia navigation boxes (`{{navbox}}` templates at the bottom of articles) are a rich source of thematic connections. Implementing this requires fetching full wikitext (50-100KB per article) and parsing with `mwparserfromhell`. The connection signal would be strong — articles in the same navbox (e.g., `{{UFC Hall of Fame}}`) are closely related.
 - **Timeline mode**: Animate through consecutive days to see how the topic landscape shifts. This requires building graphs for multiple days and interpolating node/edge changes.
 - **Performance optimization**: At 172 nodes the D3.js force layout runs smoothly. For larger graphs (e.g., top 500), WebGL rendering with PixiJS or Three.js would be needed. The first bottleneck is the force simulation tick rate, not the rendering.
-- **Export and shareable URLs**: `?date=2026-05-17&min_entity_share=3` patterns. Users should be able to bookmark or share specific graph states.
 - **spaCy model upgrade**: Switch from `en_core_web_sm` (12MB, ~85% accuracy) to `en_core_web_lg` (500MB, ~92% accuracy) for better entity recognition, especially on multi-word entities and less common names.
+- **Test coverage expansion**: Add integration tests that exercise the full pipeline with mocked API responses.
 
 ### Long-term
 - **Accessibility**: The graph is purely visual. Screen reader users cannot navigate it. A tabular "related articles" view and keyboard navigation would address this.
@@ -82,3 +106,12 @@ Navigation boxes (`{{navbox}}` templates) at the bottom of articles encode edito
 
 ### D3.js v7 force layout instead of a higher-level visualization library
 D3.js gives full control over every visual aspect of the graph (node shapes, edge styling, animation, interaction). Higher-level libraries like vis.js or cytoscape.js provide force layouts with less code but harder customization for specific visual treatments (image-thumbnail nodes, dashed helper node borders, composite edge coloring). For a visualization where nodes contain images and have multiple visual states (idle, hovered, faded, highlighted), D3.js's enter-update-exit pattern is the right abstraction level.
+
+### File-based API caching instead of in-memory or no caching
+Without caching, every `build_graph()` call — whether from CLI or the server endpoint — re-fetches the Hatnote top 100 list and every article's metadata from the MediaWiki API. With caching, repeated builds for the same date (e.g., tuning `min_entity_share` in server mode) skip API calls entirely. Two cache layers with different TTLs reflect the data's stability: Hatnote data changes daily (24h TTL), while MediaWiki article metadata (categories, links) is essentially static (7d TTL). Stdlib JSON I/O (no extra dependencies) is fast enough for these small payloads (~50KB for Hatnote, ~10KB per article).
+
+### Environment variable configuration instead of a config file
+With only ~7 settings (API endpoints, concurrency, cache paths), a config file (TOML/YAML) would be over-engineered. Environment variables integrate naturally with containerized deployments, CI pipelines, and one-off overrides. Defaults are chosen for the common case (5 concurrent workers, 24h/7d cache TTLs, sensible User-Agent). Users who never set any env var get a working system; power users can override specific values. The absence of a `.env` dependency (`python-dotenv`) keeps the dependency list minimal — just stdlib `os.environ`.
+
+### server.py as a stdlib HTTP server instead of FastAPI/Flask
+The visualization needs exactly one dynamic endpoint (`/api/graph`) and static file serving. Python's `http.server` handles both with zero dependencies and ~60 lines of code. A framework would add startup latency, dependency weight, and complexity for no benefit at this scale. If the server grows more endpoints (e.g., saved graphs, user annotations), migration to FastAPI would be straightforward — the `build_graph()` function already returns JSON-serializable dicts independently of the HTTP layer.
