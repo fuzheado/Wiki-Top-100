@@ -554,6 +554,7 @@ function renderGraph(data) {
   document.getElementById("toggle-labels").checked = false;
   buildLegend();
   initGraph(data);
+  document.getElementById("toggle-labels").dispatchEvent(new Event("change"));
 }
 
 function buildLegend() {
