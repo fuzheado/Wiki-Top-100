@@ -116,6 +116,8 @@ All UI state can be set via URL query parameters for bookmarking and sharing:
 | `legend` | `0` or `1` | `0` | Show color legend |
 | `image` | `hatnote` or `page` | `hatnote` | Image source for thumbnails |
 | `speed` | `2`, `3`, `5`, or `8` | `3` | Seconds per node in playback |
+| `zoom` | `0.5`, `1`, `1.5`, `2`, or `3` | `1` | Playback zoom level |
+| `fontsize` | `7`–`14` | `10` | Label font size in pixels |
 | `play` | `1` | — | Auto-start playback on load |
 
 Example:

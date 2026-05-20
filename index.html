@@ -262,6 +262,7 @@ svg { width: 100%; height: 100%; }
     <button class="refresh-btn" onclick="togglePlayback()" id="playback-btn" title="Auto-advance through articles by rank">▶ Play</button>
     <button class="refresh-btn" onclick="cyclePlaybackSpeed()" id="speed-btn" title="Time per node (click to cycle)">3s</button>
     <button class="refresh-btn" onclick="cyclePlaybackZoom()" id="zoom-btn" title="Playback zoom level (click to cycle)">🔍 1x</button>
+    <button class="refresh-btn" onclick="cycleFontSize()" id="fontsize-btn" title="Label font size (click to cycle)">Aa 10</button>
     <button class="refresh-btn" onclick="hardRefresh()" title="Clear cache and rebuild">⟳ Refresh</button>
     <button class="refresh-btn" onclick="toggleAbout()" title="About this project">About</button>
     <div class="stats" id="stats"></div>
@@ -524,7 +525,7 @@ function syncUrl() {
   const params = new URLSearchParams();
   const originalParams = new URLSearchParams(window.location.search);
   for (const [k, v] of originalParams) {
-    if (!["date","ignore","spacing","helpers","labels","legend","image","speed","zoom"].includes(k)) {
+    if (!["date","ignore","spacing","helpers","labels","legend","image","speed","zoom","fontsize"].includes(k)) {
       params.set(k, v);
     }
   }
@@ -543,6 +544,8 @@ function syncUrl() {
   if (speed !== 3000) params.set("speed", String(speed / 1000));
   const zoom = loadPlaybackZoom();
   if (Math.abs(zoom - 1) > 0.01) params.set("zoom", String(zoom));
+  const fs = loadFontSize();
+  if (fs !== 10) params.set("fontsize", String(fs));
   const qs = params.toString();
   const newUrl = window.location.pathname + (qs ? "?" + qs : "");
   window.history.replaceState({}, "", newUrl);
@@ -561,6 +564,10 @@ function applyPreGraphParams(params) {
     localStorage.setItem("wiki_playback_zoom", parseFloat(params.get("zoom")));
     const z = parseFloat(params.get("zoom"));
     document.getElementById("zoom-btn").textContent = z === 1 ? "🔍 1x" : "🔍 " + z + "x";
+  }
+  if (params.has("fontsize")) {
+    localStorage.setItem("wiki_font_size", parseInt(params.get("fontsize")));
+    document.getElementById("fontsize-btn").textContent = "Aa " + params.get("fontsize");
   }
   if (params.has("spacing")) {
     spacingValue = parseInt(params.get("spacing"));
@@ -629,6 +636,7 @@ document.getElementById("img-src-btn").textContent = loadImageSrc() === "page" ?
 document.getElementById("speed-btn").textContent = (loadPlaybackSpeed() / 1000) + "s";
 const initZoom = loadPlaybackZoom();
 document.getElementById("zoom-btn").textContent = initZoom === 1 ? "🔍 1x" : "🔍 " + initZoom + "x";
+document.getElementById("fontsize-btn").textContent = "Aa " + loadFontSize();
 setupOnce();
 const urlParams = new URLSearchParams(window.location.search);
 applyPreGraphParams(urlParams);
@@ -830,6 +838,7 @@ function initGraph(data) {
         .attr("fill-opacity", 0.6);
       g.append("text")
         .attr("dx", 8).attr("dy", 3)
+        .style("font-size", loadFontSize() + "px")
         .text(truncate(d.label || "", 25));
     } else {
       const r = Math.min(d.size || 12, 25);
@@ -856,6 +865,7 @@ function initGraph(data) {
       g.append("text")
         .attr("dx", 0).attr("dy", r + 12)
         .attr("text-anchor", "middle")
+        .style("font-size", loadFontSize() + "px")
         .text(truncate(d.title || "", 20));
     }
   });
@@ -1058,6 +1068,23 @@ function cyclePlaybackZoom() {
   }
   localStorage.setItem("wiki_playback_zoom", next);
   document.getElementById("zoom-btn").textContent = next === 1 ? "🔍 1x" : "🔍 " + next + "x";
+  syncUrl();
+}
+
+function loadFontSize() {
+  return parseInt(localStorage.getItem("wiki_font_size")) || 10;
+}
+
+function cycleFontSize() {
+  const sizes = [7, 8, 9, 10, 12, 14];
+  const cur = loadFontSize();
+  let next = sizes[0];
+  for (let i = 0; i < sizes.length; i++) {
+    if (sizes[i] === cur) { next = sizes[(i + 1) % sizes.length]; break; }
+  }
+  localStorage.setItem("wiki_font_size", next);
+  document.getElementById("fontsize-btn").textContent = "Aa " + next;
+  if (nodeGroup) nodeGroup.selectAll(".node text").style("font-size", next + "px");
   syncUrl();
 }
 
