@@ -783,7 +783,7 @@ function initGraph(data) {
 
   node.on("mouseover", hoverOn)
     .on("mouseout", hoverOff)
-    .on("click", clickNode);
+    .on("click", function(event, d) { if (playbackActive) stopPlayback(); clickNode(null, d); });
 
   if (spacingValue !== 27) updateSpacing(spacingValue);
 }
@@ -883,7 +883,6 @@ function showArticle(id) {
 }
 
 function clickNode(event, d) {
-  if (playbackActive) stopPlayback();
   document.getElementById("tooltip").style.display = "none";
   const panel = document.getElementById("side-panel");
   const content = document.getElementById("panel-content");
