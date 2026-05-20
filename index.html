@@ -565,7 +565,7 @@ function renderGraph(data) {
   document.getElementById("legend").classList.remove("visible");
   document.getElementById("toggle-legend").checked = false;
   document.getElementById("toggle-helpers").checked = true;
-  document.getElementById("toggle-labels").checked = false;
+  document.getElementById("toggle-labels").checked = true;
   buildLegend();
   initGraph(data);
   document.getElementById("toggle-labels").dispatchEvent(new Event("change"));
