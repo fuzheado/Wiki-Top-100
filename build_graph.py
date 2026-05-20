@@ -269,7 +269,7 @@ async def fetch_single_metadata(client, title, sem):
     async with sem:
         params = {
             "action": "query",
-            "prop": "categories|links|extracts",
+            "prop": "categories|links|extracts|pageimages",
             "titles": title,
             "format": "json",
             "cllimit": 200,
@@ -277,6 +277,8 @@ async def fetch_single_metadata(client, title, sem):
             "exintro": 1,
             "explaintext": 1,
             "exchars": 800,
+            "piprop": "thumbnail",
+            "pithumbsize": 300,
         }
         url = f"{MW_API}?{urlencode(params)}"
         for attempt in range(3):
@@ -300,7 +302,9 @@ async def fetch_single_metadata(client, title, sem):
                         if l.get("ns") == 0:
                             links.append(l.get("title", "").replace(" ", "_"))
                     extract = info.get("extract", "")
-                    result = {"categories": cats, "links": links, "extract": extract}
+                    thumbnail = info.get("thumbnail", {})
+                    page_image_url = thumbnail.get("source", "") if thumbnail else ""
+                    result = {"categories": cats, "links": links, "extract": extract, "page_image_url": page_image_url}
                     _cache_set("mw", cache_key, result)
                     return title, result
             except Exception as e:
@@ -598,6 +602,7 @@ def build_graph(year, month, day, min_entity_share=3, verbose=True, ignore_artic
         a["categories"] = [c for c in all_cats if is_meaningful_category(c)]
         a["links"] = meta.get("links", [])
         a["extract"] = meta.get("extract", "")
+        a["page_image_url"] = meta.get("page_image_url", "")
         if not all_cats and not a["links"] and len(a["extract"]) < 50:
             failed_articles.append(a["title"])
 

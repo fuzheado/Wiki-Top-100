@@ -258,6 +258,7 @@ svg { width: 100%; height: 100%; }
     <label><input type="checkbox" id="toggle-labels"> Labels</label>
     <label><input type="checkbox" id="toggle-legend"> Legend</label>
     <div class="sep"></div>
+    <button class="refresh-btn" onclick="toggleImageSrc()" id="img-src-btn" title="Toggle image source">📷 Hatnote</button>
     <button class="refresh-btn" onclick="hardRefresh()" title="Clear cache and rebuild">⟳ Refresh</button>
     <button class="refresh-btn" onclick="toggleAbout()" title="About this project">About</button>
     <div class="stats" id="stats"></div>
@@ -555,6 +556,7 @@ function applyFilters() {
 }
 
 const picker = document.getElementById("date-picker");
+document.getElementById("img-src-btn").textContent = loadImageSrc() === "page" ? "📷 Article" : "📷 Hatnote";
 setupOnce();
 initIgnoreList();
 loadLatestDate();
@@ -754,17 +756,21 @@ function initGraph(data) {
         .attr("class", "article-ring")
         .attr("r", r)
         .attr("stroke", d.color || "#6c5ce7");
-      if (d.image_url && !d.image_url.includes("W.svg")) {
-        g.append("image")
-          .attr("xlink:href", d.image_url)
-          .attr("x", -r).attr("y", -r)
-          .attr("width", r*2).attr("height", r*2)
-          .attr("clip-path", "url(#round-clip)");
-      } else {
-        g.append("circle")
-          .attr("r", r-1)
-          .attr("fill", d.color || "#6c5ce7")
-          .attr("fill-opacity", 0.3);
+      g.append("circle")
+        .attr("r", r-1)
+        .attr("fill", d.color || "#6c5ce7")
+        .attr("fill-opacity", 0.3);
+      const imgUrl = getArticleImage(d);
+      if (imgUrl && !imgUrl.includes("W.svg")) {
+        const img = new Image();
+        img.onload = () => {
+          d3.select(g.node()).append("image")
+            .attr("xlink:href", imgUrl)
+            .attr("x", -r).attr("y", -r)
+            .attr("width", r*2).attr("height", r*2)
+            .attr("clip-path", "url(#round-clip)");
+        };
+        img.src = imgUrl;
       }
       g.append("text")
         .attr("dx", 0).attr("dy", r + 12)
@@ -916,8 +922,9 @@ function clickNode(event, d) {
     html += `<h2>${escHtml(d.title)}</h2>`;
     html += `<div class="meta">#${d.rank} · ${fmtViews(d.views)} views</div>`;
     html += `<div class="cluster-tag" style="background:${color}44;color:${color}">${d.cluster}</div>`;
-    if (d.image_url && !d.image_url.includes("W.svg")) {
-      html += `<img src="${d.image_url}" alt="${d.title}">`;
+    const panelImg = getArticleImage(d);
+    if (panelImg && !panelImg.includes("W.svg")) {
+      html += `<img src="${escHtml(panelImg)}" alt="${escHtml(d.title)}" onerror="this.style.display='none'" style="max-width:100%;border-radius:6px;margin-bottom:12px">`;
     }
     if (d.summary) {
       html += `<div class="summary">${d.summary}</div>`;
@@ -1025,6 +1032,19 @@ function toggleAbout() {
     });
   }
   ov.classList.toggle("visible");
+}
+function loadImageSrc() {
+  return localStorage.getItem("wiki_image_source") || "hatnote";
+}
+function toggleImageSrc() {
+  const cur = loadImageSrc();
+  const next = cur === "hatnote" ? "page" : "hatnote";
+  localStorage.setItem("wiki_image_source", next);
+  document.getElementById("img-src-btn").textContent = next === "page" ? "📷 Article" : "📷 Hatnote";
+  if (graphData) refetchWithIgnore();
+}
+function getArticleImage(d) {
+  return loadImageSrc() === "page" && d.page_image_url ? d.page_image_url : d.image_url;
 }
 async function hardRefresh() {
   if (currentSource) { currentSource = null; }
