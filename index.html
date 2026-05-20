@@ -259,6 +259,7 @@ svg { width: 100%; height: 100%; }
     <label><input type="checkbox" id="toggle-legend"> Legend</label>
     <div class="sep"></div>
     <button class="refresh-btn" onclick="toggleImageSrc()" id="img-src-btn" title="Toggle image source">📷 Hatnote</button>
+    <button class="refresh-btn" onclick="togglePlayback()" id="playback-btn" title="Auto-advance through articles by rank">▶ Play</button>
     <button class="refresh-btn" onclick="hardRefresh()" title="Clear cache and rebuild">⟳ Refresh</button>
     <button class="refresh-btn" onclick="toggleAbout()" title="About this project">About</button>
     <div class="stats" id="stats"></div>
@@ -655,6 +656,7 @@ function goToDate(delta) {
 }
 
 function renderGraph(data) {
+  if (playbackActive) stopPlayback();
   graphData = data;
   document.getElementById("stats").textContent =
     `${data.meta.total_articles} articles · ${data.meta.total_nodes} nodes · ${data.meta.total_edges} connections`;
@@ -881,6 +883,7 @@ function showArticle(id) {
 }
 
 function clickNode(event, d) {
+  if (playbackActive) stopPlayback();
   document.getElementById("tooltip").style.display = "none";
   const panel = document.getElementById("side-panel");
   const content = document.getElementById("panel-content");
@@ -951,6 +954,64 @@ function clickNode(event, d) {
 
 function closePanel() {
   document.getElementById("side-panel").classList.remove("open");
+}
+
+let playbackIndex = -1;
+let playbackTimer = null;
+let playbackActive = false;
+
+function togglePlayback() {
+  if (playbackActive) {
+    stopPlayback();
+    return;
+  }
+  const articles = (graphData ? graphData.nodes : []).filter(n => n.type === "article").sort((a, b) => a.rank - b.rank);
+  if (articles.length === 0) return;
+  playbackActive = true;
+  playbackIndex = 0;
+  document.getElementById("playback-btn").textContent = "⏹ Stop";
+  playbackStep(articles);
+}
+
+function stopPlayback() {
+  playbackActive = false;
+  playbackIndex = -1;
+  if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; }
+  document.getElementById("playback-btn").textContent = "▶ Play";
+  hoverOff();
+}
+
+function playbackStep(articles) {
+  if (!playbackActive || playbackIndex >= articles.length) {
+    stopPlayback();
+    return;
+  }
+  const d = articles[playbackIndex];
+  const connected = new Set();
+  connected.add(d.id);
+  graphData.links.forEach(l => {
+    const sid = l.source.id || l.source;
+    const tid = l.target.id || l.target;
+    if (sid === d.id) connected.add(tid);
+    if (tid === d.id) connected.add(sid);
+  });
+  node.classed("faded", n => !connected.has(n.id));
+  node.classed("highlighted", n => n.id === d.id);
+  link.classed("faded", l => {
+    const sid = l.source.id || l.source;
+    const tid = l.target.id || l.target;
+    return sid !== d.id && tid !== d.id;
+  });
+  link.classed("highlighted", l => {
+    const sid = l.source.id || l.source;
+    const tid = l.target.id || l.target;
+    return sid === d.id || tid === d.id;
+  });
+  clickNode(null, d);
+  const t = d3.zoomIdentity.translate(WIDTH / 2 - d.x, HEIGHT / 2 - d.y);
+  svg.transition().duration(1000).call(zoom.transform, t);
+  playbackIndex++;
+  playbackTimer = setTimeout(() => playbackStep(articles), 3000);
 }
 
 function fmtViews(v) {
