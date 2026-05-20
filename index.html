@@ -261,6 +261,7 @@ svg { width: 100%; height: 100%; }
     <button class="refresh-btn" onclick="toggleImageSrc()" id="img-src-btn" title="Toggle image source">📷 Hatnote</button>
     <button class="refresh-btn" onclick="togglePlayback()" id="playback-btn" title="Auto-advance through articles by rank">▶ Play</button>
     <button class="refresh-btn" onclick="cyclePlaybackSpeed()" id="speed-btn" title="Time per node (click to cycle)">3s</button>
+    <button class="refresh-btn" onclick="cyclePlaybackZoom()" id="zoom-btn" title="Playback zoom level (click to cycle)">🔍 1x</button>
     <button class="refresh-btn" onclick="hardRefresh()" title="Clear cache and rebuild">⟳ Refresh</button>
     <button class="refresh-btn" onclick="toggleAbout()" title="About this project">About</button>
     <div class="stats" id="stats"></div>
@@ -523,7 +524,7 @@ function syncUrl() {
   const params = new URLSearchParams();
   const originalParams = new URLSearchParams(window.location.search);
   for (const [k, v] of originalParams) {
-    if (!["date","ignore","spacing","helpers","labels","legend","image","speed"].includes(k)) {
+    if (!["date","ignore","spacing","helpers","labels","legend","image","speed","zoom"].includes(k)) {
       params.set(k, v);
     }
   }
@@ -540,6 +541,8 @@ function syncUrl() {
   if (imgSrc !== "hatnote") params.set("image", imgSrc);
   const speed = loadPlaybackSpeed();
   if (speed !== 3000) params.set("speed", String(speed / 1000));
+  const zoom = loadPlaybackZoom();
+  if (Math.abs(zoom - 1) > 0.01) params.set("zoom", String(zoom));
   const qs = params.toString();
   const newUrl = window.location.pathname + (qs ? "?" + qs : "");
   window.history.replaceState({}, "", newUrl);
@@ -553,6 +556,11 @@ function applyPreGraphParams(params) {
   if (params.has("speed")) {
     localStorage.setItem("wiki_playback_speed", parseInt(params.get("speed")) * 1000);
     document.getElementById("speed-btn").textContent = params.get("speed") + "s";
+  }
+  if (params.has("zoom")) {
+    localStorage.setItem("wiki_playback_zoom", parseFloat(params.get("zoom")));
+    const z = parseFloat(params.get("zoom"));
+    document.getElementById("zoom-btn").textContent = z === 1 ? "🔍 1x" : "🔍 " + z + "x";
   }
   if (params.has("spacing")) {
     spacingValue = parseInt(params.get("spacing"));
@@ -619,6 +627,8 @@ function applyFilters() {
 const picker = document.getElementById("date-picker");
 document.getElementById("img-src-btn").textContent = loadImageSrc() === "page" ? "📷 Article" : "📷 Hatnote";
 document.getElementById("speed-btn").textContent = (loadPlaybackSpeed() / 1000) + "s";
+const initZoom = loadPlaybackZoom();
+document.getElementById("zoom-btn").textContent = initZoom === 1 ? "🔍 1x" : "🔍 " + initZoom + "x";
 setupOnce();
 const urlParams = new URLSearchParams(window.location.search);
 applyPreGraphParams(urlParams);
@@ -1032,6 +1042,25 @@ function loadPlaybackSpeed() {
   return parseInt(localStorage.getItem("wiki_playback_speed")) || 3000;
 }
 
+function loadPlaybackZoom() {
+  return parseFloat(localStorage.getItem("wiki_playback_zoom")) || 1;
+}
+
+function cyclePlaybackZoom() {
+  const zooms = [0.5, 1, 1.5, 2, 3];
+  const cur = loadPlaybackZoom();
+  let next = zooms[0];
+  for (let i = 0; i < zooms.length; i++) {
+    if (Math.abs(zooms[i] - cur) < 0.01) {
+      next = zooms[(i + 1) % zooms.length];
+      break;
+    }
+  }
+  localStorage.setItem("wiki_playback_zoom", next);
+  document.getElementById("zoom-btn").textContent = next === 1 ? "🔍 1x" : "🔍 " + next + "x";
+  syncUrl();
+}
+
 function togglePlayback() {
   if (playbackActive) {
     stopPlayback();
@@ -1089,8 +1118,9 @@ function playbackStep(articles) {
     return sid === d.id || tid === d.id;
   });
   clickNode(null, d);
+  const zoomScale = loadPlaybackZoom();
   svg.interrupt().transition().duration(1000).call(zoom.transform,
-    d3.zoomIdentity.translate(WIDTH / 2 - simNode.x, HEIGHT / 2 - simNode.y));
+    d3.zoomIdentity.translate(WIDTH / 2 - simNode.x * zoomScale, HEIGHT / 2 - simNode.y * zoomScale).scale(zoomScale));
   playbackIndex++;
   playbackTimer = setTimeout(() => playbackStep(articles), loadPlaybackSpeed());
 }
