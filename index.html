@@ -430,9 +430,8 @@ function setupOnce() {
   });
 
   document.getElementById("toggle-helpers").addEventListener("change", function() {
-    if (!nodeGroup) return;
-    nodeGroup.selectAll(".node.helper").style("display", this.checked ? null : "none");
-    linkGroup.selectAll(".link.category, .link.entity").style("display", this.checked ? null : "none");
+    if (!node || !link) return;
+    applyFilters();
   });
 
   document.getElementById("toggle-labels").addEventListener("change", function() {
@@ -541,14 +540,17 @@ function applyFilters() {
     }
   }
   node.style("display", d => {
-    if (d.type !== "article") return null;
+    if (d.type !== "article") {
+      return document.getElementById("toggle-helpers").checked ? null : "none";
+    }
     return hiddenIds.has(d.id) ? "none" : null;
   });
   link.style("display", l => {
-    if (hiddenIds.size === 0) return null;
     const sid = l.source.id || l.source;
     const tid = l.target.id || l.target;
-    return hiddenIds.has(sid) || hiddenIds.has(tid) ? "none" : null;
+    if (hiddenIds.has(sid) || hiddenIds.has(tid)) return "none";
+    if (!document.getElementById("toggle-helpers").checked && (l.type === "category" || l.type === "entity")) return "none";
+    return null;
   });
 }
 
