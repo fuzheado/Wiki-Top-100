@@ -521,9 +521,17 @@ function updateIgnoreUrl() {
 
 function syncUrl() {
   const params = new URLSearchParams();
+  const originalParams = new URLSearchParams(window.location.search);
+  for (const [k, v] of originalParams) {
+    if (!["date","ignore","spacing","helpers","labels","legend","image","speed"].includes(k)) {
+      params.set(k, v);
+    }
+  }
   const parts = picker.value.split("-");
   if (parts.length === 3) params.set("date", picker.value);
-  if (ignoreList.length > 0) params.set("ignore", ignoreList.join(","));
+  if (ignoreList.length > 0 && JSON.stringify(ignoreList) !== JSON.stringify(DEFAULT_IGNORE)) {
+    params.set("ignore", ignoreList.join(","));
+  }
   if (spacingValue !== 27) params.set("spacing", String(spacingValue));
   if (!document.getElementById("toggle-helpers").checked) params.set("helpers", "0");
   if (!document.getElementById("toggle-labels").checked) params.set("labels", "0");
@@ -700,7 +708,6 @@ function onDateChange() {
   const parts = picker.value.split("-");
   if (parts.length === 3) {
     document.getElementById("loading-indicator").textContent = "";
-    syncUrl();
     fetchGraph(parts[0], String(parseInt(parts[1])), String(parseInt(parts[2])))
       .then(data => { renderGraph(data); applyFilters(); })
       .catch(() => { hideProgress(); document.getElementById("loading-indicator").textContent = "No data for this date"; });
