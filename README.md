@@ -102,6 +102,27 @@ WIKI_USER_AGENT="MyViz/1.0 (me@example.com)" WIKI_MAX_CONCURRENT=5 python3 serve
 
 During pipeline execution, a progress overlay shows each step: fetching top 100, per-article metadata (e.g., "45/100"), NER, and graph assembly.
 
+## URL Parameters
+
+All UI state can be set via URL query parameters for bookmarking and sharing:
+
+| Parameter | Values | Default | Description |
+|-----------|--------|---------|-------------|
+| `date` | `YYYY-MM-DD` | today | Load a specific date |
+| `ignore` | comma-separated article titles | `.xxx`,`.xyz`,XXX articles | Articles to exclude |
+| `spacing` | `0`–`100` | `27` | Force simulation repulsion |
+| `helpers` | `0` or `1` | `1` | Show helper nodes |
+| `labels` | `0` or `1` | `1` | Show node labels |
+| `legend` | `0` or `1` | `0` | Show color legend |
+| `image` | `hatnote` or `page` | `hatnote` | Image source for thumbnails |
+| `speed` | `2`, `3`, `5`, or `8` | `3` | Seconds per node in playback |
+| `play` | `1` | — | Auto-start playback on load |
+
+Example:
+```
+http://localhost:8080/?date=2026-05-17&labels=0&speed=5&play=1
+```
+
 ## Dependencies
 
 - Python 3.12+

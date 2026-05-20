@@ -68,6 +68,14 @@
 - **UI override**: users can set a custom UA via the settings panel (stored in localStorage, sent as `user_agent` query param)
 - Default UA: `WikiTop100Viz/1.0 (contact: andrew.lih@gmail.com)` — compliant with Wikimedia policy
 
+### URL Parameters
+- All UI state is reflected in URL query parameters and updated on every interaction via `syncUrl()`
+- Parameters: `date`, `ignore`, `spacing`, `helpers`, `labels`, `legend`, `image`, `speed`, `play`
+- `play=1` auto-starts playback 1.5s after graph render
+- `applyPreGraphParams()` sets pre-render state (image source, speed, spacing slider value)
+- `applyPostRenderParams()` applies graph-dependent state after each `renderGraph()` call (toggles, spacing to simulation, auto-play)
+- Ignore list is read from URL on page load (falls back to `DEFAULT_IGNORE` list)
+
 ### Testing
 - pytest test suite at `tests/` with **36 tests** covering: category filtering, cluster assignment, entity normalization, cache roundtrip, HTTP retry, graph construction, serialization, progress callback, UA compliance, and failed-article metadata
 - Run with: `python3 -m pytest tests/`
