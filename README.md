@@ -4,6 +4,8 @@ An interactive visualization of the top 100 most popular English Wikipedia artic
 
 **Live example data**: May 17, 2026 — 100 articles, 72 helper nodes, 396 connections.
 
+![](screenshot-wiki.png)
+
 ## How It Works
 
 ```
@@ -79,13 +81,18 @@ WIKI_USER_AGENT="MyViz/1.0 (me@example.com)" WIKI_MAX_CONCURRENT=5 python3 serve
 |---------|--------|
 | Search | Filter articles by name in real-time |
 | Helpers toggle | Show/hide category and entity helper nodes |
-| Labels toggle | Show/hide all node labels |
+| Labels toggle | Show/hide all node labels (on by default) |
 | Legend toggle | Show/hide the color legend |
 | Spacing slider | Adjust force simulation repulsion |
-| Date picker | Select any date (triggers live rebuild with progress overlay) |
+| Date picker + ◀ ▶ | Navigate between days (triggers live rebuild) |
+| ▶ Play / ⏹ Stop | Auto-advance through articles #1–#100; click to cycle speed (2s/3s/5s/8s) |
 | Ignore list | Add articles to exclude; persisted in URL (`?ignore=`) |
 | Hide buttons | One-click filters (Social media apps, Geography cluster) |
-| UA settings | Click ⚙ to view/change User-Agent; non-compliant agents trigger a warning |
+| 📷 Image source | Toggle between Hatnote and Wikipedia article thumbnails |
+| ⚙ UA settings | View/change User-Agent; non-compliant agents trigger a warning |
+| ⟳ Refresh | Clear cache and rebuild the current date |
+| ⚠ Failed articles | Warning indicator with list of rate-limited articles |
+| About | Project overview, controls reference, and credits |
 | Hover | Highlight connected subgraph + tooltip |
 | Click (article) | Open side panel with summary and connections |
 | Click (helper) | Open side panel with connected article list |
@@ -112,7 +119,7 @@ During pipeline execution, a progress overlay shows each step: fetching top 100,
 ├── index.html           # D3.js force-directed graph visualization
 ├── graph_data.json      # Pre-built graph data (gitignored, run build_graph.py to generate)
 ├── requirements.txt     # Python dependencies
-├── tests/               # pytest test suite (35 tests)
+├── tests/               # pytest test suite (36 tests)
 ├── .venv/               # Python virtual environment
 ├── .cache/              # Cached API responses (gitignored, auto-created)
 ├── README.md            # This file

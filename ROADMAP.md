@@ -16,6 +16,9 @@
 - Can be called programmatically via `build_graph()` for server mode
 - **Exponential backoff** on MW API retries (0.5s, 1s, 2s) for rate-limit resilience
 - **Concurrency reduced** from 5 to 3 to avoid triggering MW API rate limits
+- **Failed article tracking**: articles with empty metadata (rate-limited) are listed in graph meta as `failed_articles[]`
+- **Article thumbnails**: fetches both Hatnote `image_url` and MW API `page_image_url` (via `prop=pageimages`)
+- **`.env` support**: stdlib-only parser, no `python-dotenv` dependency
 
 ### Server (`server.py`)
 - Serves static files and provides `/api/graph?year=&month=&day=&min_entity=&ignore=&user_agent=` endpoint
@@ -32,13 +35,18 @@
 - Hover highlights connected subgraph (fades everything else)
 - Click on articles or helpers opens a side panel with summary, connections, and Wikipedia link
 - Search bar filters articles by name in real-time
-- **Date picker**: Select any date to re-fetch the graph from the server API
+- **Date picker + ◀ ▶ nav buttons**: Navigate between days, triggers live rebuild with progress overlay
+- **Playback mode** (▶/⏹): auto-advances through articles #1–#100 with 3s default interval, smooth centering on each node, highlights connected subgraph, opens side panel. Speed cycles 2s/3s/5s/8s. Simulation is frozen during playback and restarted on stop.
 - **Progress overlay**: Centered spinner with live step-by-step status during pipeline execution
 - **UA settings**: Click ⚙ to view/change User-Agent; non-compliant agents show a warning
+- **📷 Image source toggle**: Switch between Hatnote and Wikipedia article thumbnails (stored in localStorage). Pre-validates image URLs with HTML `Image()` constructor — broken images fall back to colored circle.
+- **⟳ Refresh button**: Clears `.cache/` and rebuilds the current date
+- **⚠ Failed-article diagnostic**: Warning indicator with clickable list of rate-limited articles
+- **About dialog**: Project info, controls reference, credits, and current User-Agent
 - **Spacing slider**: Adjust force simulation charge strength
-- **Ignore list**: Add/remove article titles to exclude from the graph (persisted in URL as `?ignore=`)
+- **Ignore list**: Add/remove article titles to exclude (persisted in URL as `?ignore=`, default ignores `.xxx`, `.xyz`, XXX-related articles)
 - **Hide buttons**: One-click toggles for pre-defined groups (Social media apps, Geography cluster)
-- Toggle controls for helper nodes, labels, and legend
+- Toggle controls for helper nodes, labels (on by default), and legend
 - Shareable URLs (`?ignore=Article1,Article2`)
 
 ### Caching (`.cache/`)
@@ -61,7 +69,7 @@
 - Default UA: `WikiTop100Viz/1.0 (contact: andrew.lih@gmail.com)` — compliant with Wikimedia policy
 
 ### Testing
-- pytest test suite at `tests/` with **35 tests** covering: category filtering, cluster assignment, entity normalization, cache roundtrip, HTTP retry, graph construction, serialization, progress callback, and UA compliance
+- pytest test suite at `tests/` with **36 tests** covering: category filtering, cluster assignment, entity normalization, cache roundtrip, HTTP retry, graph construction, serialization, progress callback, UA compliance, and failed-article metadata
 - Run with: `python3 -m pytest tests/`
 
 ### Documentation
@@ -73,11 +81,10 @@
 ## 2. What's Outstanding
 
 ### Near-term (single-session additions)
-- **Date picker connection lifecycle**: On page reload with cached JS, the `loadLatestDate` loop may fail to find a working date, showing "No recent data found" even though data exists. Root cause is likely a race between cache expiration, rate-limit cooldown, and the browser tab's connection state. Needs debugging of the EventSource/NDJSON stream lifecycle.
+- **Date picker connection lifecycle**: On page reload with cached JS, the `loadLatestDate` loop may fail to find a working date, showing "No recent data found" even though data exists. Root cause is likely a race between cache expiration, rate-limit cooldown, and the browser tab's connection state. Needs debugging of the NDJSON stream lifecycle.
 - **Rate-limit recovery**: When the MW API rate-limits the builder, failed articles return empty data. The cache correctly avoids storing empty results, but subsequent builds immediately retry and may hit the same rate limit. A backoff strategy across build attempts (not just per-request) would help.
+- **Full shareable URLs**: The `?ignore=` param is shareable but `?date=`, `?min_entity=`, and `?user_agent=` are not yet persisted in the URL on date change.
 - **Category helper quality**: Some borderline categories still slip through the filter (e.g., "Casting controversies in film", "American IMAX films"). The `MAINT_CAT_PATTERNS` regex list needs periodic expansion as new patterns emerge.
-- **Image loading reliability**: The D3.js code supports thumbnail images in article nodes, but many articles don't have usable images from the MediaWiki API. A fallback to pull images from the Hatnote data (which includes `image_url`) already exists but could be more consistent.
-- **Full shareable URLs**: The `?ignore=` param is shareable but `?date=` and `?min_entity=` are not yet persisted in the URL on date change.
 
 ### Medium-term
 - **Navigation box parsing**: Wikipedia navigation boxes (`{{navbox}}` templates at the bottom of articles) are a rich source of thematic connections. Implementing this requires fetching full wikitext (50-100KB per article) and parsing with `mwparserfromhell`. The connection signal would be strong — articles in the same navbox (e.g., `{{UFC Hall of Fame}}`) are closely related.
@@ -140,3 +147,9 @@ Server-Sent Events (SSE) would be the textbook choice for streaming progress, bu
 
 ### Built-in User-Agent compliance check instead of relying on documentation
 Wikimedia's User-Agent policy requires a contact method (email or URL) in the User-Agent string. Non-compliant agents are silently rate-limited, which is confusing to debug. The `_is_valid_ua()` regex check runs before every `build_graph()` call and warns both on stdout (CLI) and in the UI (graph meta includes `ua_compliant` boolean). The settings panel lets users override the UA at runtime (stored in localStorage) without editing source code or restarting the server. The `.env` file is the recommended permanent configuration path.
+
+### Playback mode with simulation freeze instead of live-stepping
+During auto-advance playback, the force simulation is frozen (`simulation.stop()`) to prevent nodes from drifting while each article is highlighted. The active node is pinned (`fx/fy`) so its position stays stable during the 1-second centering animation. On stop, all pins are released and the simulation restarts with `alpha(0.3)` to re-enable drag interaction. Speed is configurable via a cycling 2s/3s/5s/8s toggle (localStorage) instead of a slider, keeping the controls bar compact.
+
+### HTML Image() preloading instead of SVG onerror for broken images
+SVG `<image>` elements don't have reliable `onerror` events across browsers, and adding images asynchronously into a D3 force graph can cause visual flicker. The current approach uses the HTML `Image()` constructor to pre-validate URLs before injecting them into the SVG. A colored circle is always rendered as a fallback background; if the image loads successfully it's layered on top, and if it fails (deleted from Commons, renamed, etc.) the circle remains visible — no broken image icon. Two image sources are available (Hatnote and MW API `pageimage`), switchable via a toggle in localStorage.
