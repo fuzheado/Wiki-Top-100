@@ -975,7 +975,7 @@ function togglePlayback() {
   playbackActive = true;
   playbackIndex = 0;
   if (simulation) simulation.stop();
-  if (graphData) graphData.nodes.forEach(n => { n.fx = null; n.fy = null; });
+  if (graphData) graphData.nodes.forEach(n => { const s = nodeMap && nodeMap[n.id]; if (s) { s.fx = null; s.fy = null; } });
   document.getElementById("playback-btn").textContent = "⏹ Stop";
   playbackStep(articles);
 }
@@ -985,7 +985,7 @@ function stopPlayback() {
   playbackIndex = -1;
   if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; }
   document.getElementById("playback-btn").textContent = "▶ Play";
-  if (graphData) graphData.nodes.forEach(n => { n.fx = null; n.fy = null; });
+  if (graphData) graphData.nodes.forEach(n => { const s = nodeMap && nodeMap[n.id]; if (s) { s.fx = null; s.fy = null; } });
   if (simulation) simulation.alpha(0.3).restart();
   hoverOff();
   svg.interrupt().transition().duration(500).call(zoom.transform, d3.zoomIdentity);
@@ -997,8 +997,9 @@ function playbackStep(articles) {
     return;
   }
   const d = articles[playbackIndex];
-  d.fx = d.x;
-  d.fy = d.y;
+  const simNode = nodeMap[d.id] || d;
+  simNode.fx = simNode.x;
+  simNode.fy = simNode.y;
 
   const connected = new Set();
   connected.add(d.id);
@@ -1022,7 +1023,7 @@ function playbackStep(articles) {
   });
   clickNode(null, d);
   svg.interrupt().transition().duration(1000).call(zoom.transform,
-    d3.zoomIdentity.translate(WIDTH / 2 - d.x, HEIGHT / 2 - d.y));
+    d3.zoomIdentity.translate(WIDTH / 2 - simNode.x, HEIGHT / 2 - simNode.y));
   playbackIndex++;
   playbackTimer = setTimeout(() => playbackStep(articles), loadPlaybackSpeed());
 }
