@@ -260,6 +260,7 @@ svg { width: 100%; height: 100%; }
     <div class="sep"></div>
     <button class="refresh-btn" onclick="toggleImageSrc()" id="img-src-btn" title="Toggle image source">📷 Hatnote</button>
     <button class="refresh-btn" onclick="togglePlayback()" id="playback-btn" title="Auto-advance through articles by rank">▶ Play</button>
+    <button class="refresh-btn" onclick="cyclePlaybackSpeed()" id="speed-btn" title="Time per node (click to cycle)">3s</button>
     <button class="refresh-btn" onclick="hardRefresh()" title="Clear cache and rebuild">⟳ Refresh</button>
     <button class="refresh-btn" onclick="toggleAbout()" title="About this project">About</button>
     <div class="stats" id="stats"></div>
@@ -558,6 +559,7 @@ function applyFilters() {
 
 const picker = document.getElementById("date-picker");
 document.getElementById("img-src-btn").textContent = loadImageSrc() === "page" ? "📷 Article" : "📷 Hatnote";
+document.getElementById("speed-btn").textContent = (loadPlaybackSpeed() / 1000) + "s";
 setupOnce();
 initIgnoreList();
 loadLatestDate();
@@ -959,6 +961,10 @@ let playbackIndex = -1;
 let playbackTimer = null;
 let playbackActive = false;
 
+function loadPlaybackSpeed() {
+  return parseInt(localStorage.getItem("wiki_playback_speed")) || 3000;
+}
+
 function togglePlayback() {
   if (playbackActive) {
     stopPlayback();
@@ -968,6 +974,8 @@ function togglePlayback() {
   if (articles.length === 0) return;
   playbackActive = true;
   playbackIndex = 0;
+  if (simulation) simulation.stop();
+  if (graphData) graphData.nodes.forEach(n => { n.fx = null; n.fy = null; });
   document.getElementById("playback-btn").textContent = "⏹ Stop";
   playbackStep(articles);
 }
@@ -977,7 +985,10 @@ function stopPlayback() {
   playbackIndex = -1;
   if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; }
   document.getElementById("playback-btn").textContent = "▶ Play";
+  if (graphData) graphData.nodes.forEach(n => { n.fx = null; n.fy = null; });
+  if (simulation) simulation.alpha(0.3).restart();
   hoverOff();
+  svg.interrupt().transition().duration(500).call(zoom.transform, d3.zoomIdentity);
 }
 
 function playbackStep(articles) {
@@ -986,6 +997,9 @@ function playbackStep(articles) {
     return;
   }
   const d = articles[playbackIndex];
+  d.fx = d.x;
+  d.fy = d.y;
+
   const connected = new Set();
   connected.add(d.id);
   graphData.links.forEach(l => {
@@ -1007,10 +1021,19 @@ function playbackStep(articles) {
     return sid === d.id || tid === d.id;
   });
   clickNode(null, d);
-  const t = d3.zoomIdentity.translate(WIDTH / 2 - d.x, HEIGHT / 2 - d.y);
-  svg.transition().duration(1000).call(zoom.transform, t);
+  svg.interrupt().transition().duration(1000).call(zoom.transform,
+    d3.zoomIdentity.translate(WIDTH / 2 - d.x, HEIGHT / 2 - d.y));
   playbackIndex++;
-  playbackTimer = setTimeout(() => playbackStep(articles), 3000);
+  playbackTimer = setTimeout(() => playbackStep(articles), loadPlaybackSpeed());
+}
+
+function cyclePlaybackSpeed() {
+  const speeds = [2000, 3000, 5000, 8000];
+  const cur = loadPlaybackSpeed();
+  const idx = speeds.indexOf(cur);
+  const next = speeds[(idx + 1) % speeds.length];
+  localStorage.setItem("wiki_playback_speed", next);
+  document.getElementById("speed-btn").textContent = (next / 1000) + "s";
 }
 
 function fmtViews(v) {
