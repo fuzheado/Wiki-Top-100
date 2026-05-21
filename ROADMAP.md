@@ -111,6 +111,8 @@
 - **Rate-limit recovery**: When the MW API rate-limits the builder, failed articles return empty data. The cache correctly avoids storing empty results, but subsequent builds immediately retry and may hit the same rate limit. A backoff strategy across build attempts (not just per-request) would help.
 - **Full shareable URLs**: The `?ignore=` param is shareable but `?date=`, `?min_entity=`, and `?user_agent=` are not yet persisted in the URL on date change.
 - **Category helper quality**: Some borderline categories still slip through the filter (e.g., "Casting controversies in film", "American IMAX films"). The `MAINT_CAT_PATTERNS` regex list needs periodic expansion as new patterns emerge.
+- **Startup instruction overlay**: On first visit (or until dismissed), show a brief card explaining what the graph is — a compact version of the "About" dialog content. Include a "Try the autoplay mode" button that triggers playback, giving new users an immediate way to explore without knowing how to interact with the force graph.
+- **Persist zoom/pan state in URL**: Capture the current zoom level and pan offset (`translate(x, y)`, `scale(k)`) as URL query parameters so users can bookmark or share a specific view of the graph. This would also enable deep-linking to a particular region of interest.
 
 ### Medium-term
 - **Navigation box parsing**: Wikipedia navigation boxes (`{{navbox}}` templates at the bottom of articles) are a rich source of thematic connections. Implementing this requires fetching full wikitext (50-100KB per article) and parsing with `mwparserfromhell`. The connection signal would be strong — articles in the same navbox (e.g., `{{UFC Hall of Fame}}`) are closely related.
@@ -124,8 +126,16 @@
 - **Offline support**: D3.js v7 is loaded from Toolforge's cdnjs mirror (`tools-static.wmflabs.org/cdnjs`). Pre-bundling the library into the repository or Docker image would eliminate this dependency and improve load times.
 - **WebSocket live updates**: Push real-time updates as the daily top 100 changes (Hatnote updates daily).
 - **Mobile layout**: The controls bar and side panel need responsive breakpoints for smaller screens. The force graph is inherently desktop-friendly.
+- **Mobile design investigation**: Test the current graph on actual mobile devices to determine whether any meaningful touch-based interaction model is feasible (pinch-to-zoom, tap-to-select, swipe-between-articles). If not, document the decision to require a large screen as a hard constraint and build appropriate gatekeeping (responsive banner/modal on small viewports) rather than investing in a compromised mobile experience.
 - **User-contributed connection types**: Allow users to define custom edges between articles (e.g., "both articles were in the news this week"). This requires adding a small backend for persistence.
-- **Multi-language support**: The Hatnote API supports other Wikipedia languages. The pipeline could be extended to visualize connections across languages.
+- **Multi-language methodology audit**: `top.hatnote.com` supports 28 Wikipedia languages (as listed on their about page). Investigate how much of the current methodology generalizes across languages and what would need to change for each one. Key questions include:
+  - **NER**: spaCy has trained pipelines for ~25 languages (`xx_ent_wiki_sm` for others), but entity quality varies significantly. Would we need language-specific stopword/blacklist lists (like the English `common_names` filter)?
+  - **Category filtering**: The regex-based `MAINT_CAT_PATTERNS` is English-specific. Each language has its own maintenance category naming conventions (e.g., "Artikel mit..." in German, "Articles avec..." in French). Would a pattern-based approach still work, or would a curated blocklist per language be needed?
+  - **Topic clustering**: The current keyword-based cluster assignment is English-only. For other languages, either the keyword lists would need translation/localization, or the approach would need to switch to a language-agnostic method (e.g., embedding-based clustering).
+  - **API language codes**: The MediaWiki API uses `&list=categorymembers&cmtitle=Category:...` — category names are language-specific. The Hatnote API uses language codes (`/en/`, `/de/`, `/fr/`, etc.). Mapping between the two is straightforward but must be configured per language.
+  - **D3.js labels**: Unicode rendering in SVG is well-supported, but label sizing and wrapping would need to accommodate varying character widths (e.g., CJK vs Latin).
+  - **UI localization**: The entire frontend (controls, About dialog, side panel, overlays) would need translation strings. The current hardcoded English text throughout `index.html` would need to be externalized.
+  The deliverable would be a document (or section of AGENTS.md) mapping each language's feasibility, identifying the "tiers" of effort (e.g., Latin-script languages = easy, CJK = medium, RTL = medium, low-resource = hard).
 
 ## 3. Key Decisions
 
