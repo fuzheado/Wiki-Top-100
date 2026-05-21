@@ -68,7 +68,7 @@ class GraphAPIHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) >= 2 else 8080
+    port = int(os.environ.get("PORT", sys.argv[1] if len(sys.argv) >= 2 else "8080"))
     server = HTTPServer(("0.0.0.0", port), GraphAPIHandler)
     print(f"Server at http://localhost:{port}")
     print(f"  Open http://localhost:{port} for the visualization")

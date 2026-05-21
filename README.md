@@ -130,17 +130,24 @@ http://localhost:8080/?play=1&date=2026-05-17&speed=5&zoom=2&fontsize=7&order=ra
 
 - Python 3.12+
 - `httpx`, `networkx`, `spacy` (+ `en_core_web_sm`)
-- D3.js v7 (loaded from CDN in `index.html`)
+- D3.js v7 (loaded from Toolforge CDN proxy in `index.html`)
+- Docker (for Toolforge Build Service deployment)
 - `pytest` (for running tests)
+
+## Deployment
+
+See [DEPLOY_TOOLFORGE.md](DEPLOY_TOOLFORGE.md) for deploying to Wikimedia Toolforge as a build service container. The project includes a `Dockerfile` and supports the `$PORT` environment variable convention.
 
 ## Project Structure
 
 ```
 .
 ├── .env.example         # Environment variable reference (copy to .env)
+├── .dockerignore        # Files excluded from Docker build context
 ├── build_graph.py       # Python pipeline: fetch → parse → analyze → export
 ├── server.py            # HTTP server with /api/graph endpoint (streaming NDJSON)
 ├── index.html           # D3.js force-directed graph visualization
+├── Dockerfile           # Toolforge Build Service container definition
 ├── graph_data.json      # Pre-built graph data (gitignored, run build_graph.py to generate)
 ├── requirements.txt     # Python dependencies
 ├── tests/               # pytest test suite (36 tests)
@@ -148,5 +155,6 @@ http://localhost:8080/?play=1&date=2026-05-17&speed=5&zoom=2&fontsize=7&order=ra
 ├── .cache/              # Cached API responses (gitignored, auto-created)
 ├── README.md            # This file
 ├── ROADMAP.md           # Future plans and architecture decisions
+├── DEPLOY_TOOLFORGE.md  # Toolforge deployment guide
 └── AGENTS.md            # Development log, decisions, and conventions
 ```

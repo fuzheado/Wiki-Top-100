@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.playwright-mcp/
+graph_data.json
+screenshot*.png
+wikitop100_viz.png
+final_screenshot.png
+.cache/
+.env
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+AGENTS.md
+ROADMAP.md
+DEPLOY_TOOLFORGE.md

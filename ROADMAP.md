@@ -26,9 +26,11 @@
 - **Streams pipeline progress** as newline-delimited JSON (NDJSON) with `Connection: close`
 - Per-article progress reporting (e.g., "Fetched article metadata (45/100)")
 - Error handling sends SSE error events instead of crashing
+- Supports `$PORT` environment variable for containerized deployments (Toolforge convention), with CLI arg and 8080 fallback
 
 ### Visualization (`index.html`)
 - D3.js v7 force-directed graph with draggable, zoomable, pannable canvas
+- D3.js loaded from Toolforge's privacy-preserving CDN proxy (`cdn.toolforge.org`) instead of `d3js.org`
 - Article nodes: colored by topic cluster, sized by log-scaled page views, displayed with thumbnail images where available
 - Helper nodes: small gray circles with dashed borders, visually subordinate to article nodes
 - Edges: purple for wikilinks, green for categories, orange for entities, with thickness indicating weight
@@ -59,6 +61,13 @@
 - Empty/failed results are NOT cached, so rate-limited articles retry on subsequent builds
 - Configurable via `WIKI_CACHE_DIR`, `WIKI_HATNOTE_CACHE_TTL`, `WIKI_MW_CACHE_TTL` env vars
 
+### Toolforge Deployment Infrastructure
+- `Dockerfile` — Build Service image based on `toolforge-python3.13:latest`, installs deps and spaCy model in `/opt/venv`, runs `server.py` on port 8000
+- `.dockerignore` — excludes venv, cache, screenshots, git metadata from build context
+- `DEPLOY_TOOLFORGE.md` — step-by-step guide covering build, service template, webservice start, env vars, updates, and troubleshooting
+- `server.py` reads `$PORT` env var as the first port-source option (Toolforge convention), then CLI arg, then 8080 fallback
+- D3.js loaded from `cdn.toolforge.org` (Toolforge's anonymizing proxy to cdnjs) instead of `d3js.org`, per Toolforge privacy policy
+
 ### Configuration
 - All key settings configurable via environment variables (see README for full table)
 - `.env` file support (stdlib-only parser, no `python-dotenv` dependency)
@@ -85,9 +94,10 @@
 - Run with: `python3 -m pytest tests/`
 
 ### Documentation
-- `README.md` — project overview, architecture diagram, setup and usage instructions, configuration reference
+- `README.md` — project overview, architecture diagram, setup and usage instructions, configuration reference, deployment section
 - `AGENTS.md` — development evolution, architecture decisions with rationale, known issues and trade-offs, code conventions, future ideas
 - `ROADMAP.md` — this file, tracking current state and outstanding work
+- `DEPLOY_TOOLFORGE.md` — step-by-step Toolforge Build Service deployment guide with troubleshooting
 - Docstrings on all Python functions covering purpose, parameters, return values, and design rationale
 
 ## 2. What's Outstanding
@@ -107,7 +117,7 @@
 
 ### Long-term
 - **Accessibility**: The graph is purely visual. Screen reader users cannot navigate it. A tabular "related articles" view and keyboard navigation would address this.
-- **Offline support**: D3.js v7 is currently loaded from CDN. Pre-bundling the library would allow the visualization to work without internet access after the data is fetched.
+- **Offline support**: D3.js v7 is loaded from Toolforge's CDN proxy (`cdn.toolforge.org`). While this preserves user privacy, the tool still requires internet access for the CDN load. Pre-bundling D3.js into the repository or Docker image would eliminate this dependency.
 - **WebSocket live updates**: Push real-time updates as the daily top 100 changes (Hatnote updates daily).
 - **Mobile layout**: The controls bar and side panel need responsive breakpoints for smaller screens. The force graph is inherently desktop-friendly.
 - **User-contributed connection types**: Allow users to define custom edges between articles (e.g., "both articles were in the news this week"). This requires adding a small backend for persistence.
@@ -156,6 +166,9 @@ The visualization needs exactly one dynamic endpoint (`/api/graph`) and static f
 
 ### NDJSON streaming with `Connection: close` instead of SSE or polling
 Server-Sent Events (SSE) would be the textbook choice for streaming progress, but `SimpleHTTPRequestHandler` doesn't support persistent connections well — it tries to read the next HTTP request after `do_GET()` returns. Newline-delimited JSON (`application/x-ndjson`) with `Connection: close` is simpler: each JSON object is one line, and closing the connection after the final graph event signals the browser that the stream is complete. The frontend uses `fetch()` + `ReadableStream.getReader()` to parse lines incrementally. This avoids SSE quirks (reconnection, content-type enforcement, keep-alive) and EventSource limitations (no custom headers, GET-only).
+
+### Toolforge Build Service instead of WSGI adaptation for deployment
+The project's `server.py` uses Python's stdlib `http.server.HTTPServer`, which is not WSGI-compatible. Toolforge's Python webservice type expects uWSGI with an `app` variable in `$HOME/www/python/src/app.py`. Adapting to WSGI would require: (1) rewriting the API handler as a WSGI generator with careful NDJSON streaming through uWSGI's buffer, (2) configuring uWSGI static file serving, and (3) testing that the streaming doesn't break. The Toolforge Build Service approach avoids all of these: a `Dockerfile` packages the existing server.py unchanged, with the Toolforge proxy routing to whatever port the container listens on. The build service also gives full control over the runtime environment (Python version, system packages) and avoids NFS-mounted code with its latency and caching quirks. The trade-off is a one-time build step and maintaining a Dockerfile, but this is negligible compared to the ongoing maintenance of a WSGI shim layer.
 
 ### Built-in User-Agent compliance check instead of relying on documentation
 Wikimedia's User-Agent policy requires a contact method (email or URL) in the User-Agent string. Non-compliant agents are silently rate-limited, which is confusing to debug. The `_is_valid_ua()` regex check runs before every `build_graph()` call and warns both on stdout (CLI) and in the UI (graph meta includes `ua_compliant` boolean). The settings panel lets users override the UA at runtime (stored in localStorage) without editing source code or restarting the server. The `.env` file is the recommended permanent configuration path.
