@@ -62,6 +62,7 @@
 - Configurable via `WIKI_CACHE_DIR`, `WIKI_HATNOTE_CACHE_TTL`, `WIKI_MW_CACHE_TTL` env vars
 
 ### Toolforge Deployment Infrastructure
+- Successfully deployed and running at **wikiptop100.toolforge.org**
 - `Procfile` — defines the `web` process (`python server.py`) for Cloud Native Buildpacks
 - `bin/post_compile` — Heroku-style build hook that downloads the spaCy model during image build (avoids downloading on every container start)
 - `Dockerfile` — alternative container definition for manual Docker builds (not used by the build service)
@@ -69,6 +70,7 @@
 - `DEPLOY_TOOLFORGE.md` — step-by-step guide covering build, service template, webservice start, env vars, updates, and troubleshooting
 - `server.py` reads `$PORT` env var as the first port-source option (Toolforge convention), then CLI arg, then 8080 fallback
 - D3.js loaded from `tools-static.wmflabs.org/cdnjs` (Toolforge's cdnjs mirror, preserving user privacy)
+- Known issue: `cdn.toolforge.org` and `cdnjs.toolforge.org` return 404 — only `tools-static.wmflabs.org/cdnjs/ajax/libs/...` works
 
 ### Configuration
 - All key settings configurable via environment variables (see README for full table)

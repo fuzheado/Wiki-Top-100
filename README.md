@@ -7,7 +7,7 @@ The app has two modes:
 - **Explore** — the full interactive force-directed graph. Search, filter, drag nodes, hover for connections, click for details. A "lean forward" experience for analysis and discovery.
 - **Play** — auto-advances through every article one by one, smoothly centering and highlighting each node and its connections. Adjustable speed (2s–8s per article), zoom level, and random-walk order. A "lean back" experience ideal for big screens, event displays, or screensaver-style viewing.
 
-**Live example data**: May 17, 2026 — 100 articles, 72 helper nodes, 396 connections.
+**Live at [wikiptop100.toolforge.org](https://wikiptop100.toolforge.org)** — May 17, 2026: 100 articles, 72 helper nodes, 396 connections.
 
 ![](screenshot-detail.png)
 
