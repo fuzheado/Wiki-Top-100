@@ -30,7 +30,7 @@
 
 ### Visualization (`index.html`)
 - D3.js v7 force-directed graph with draggable, zoomable, pannable canvas
-- D3.js loaded from Toolforge's privacy-preserving CDN proxy (`cdn.toolforge.org`) instead of `d3js.org`
+- D3.js loaded from `d3js.org` (canonical CDN)
 - Article nodes: colored by topic cluster, sized by log-scaled page views, displayed with thumbnail images where available
 - Helper nodes: small gray circles with dashed borders, visually subordinate to article nodes
 - Edges: purple for wikilinks, green for categories, orange for entities, with thickness indicating weight
@@ -68,7 +68,7 @@
 - `.dockerignore` — excludes venv, cache, screenshots, git metadata from build context
 - `DEPLOY_TOOLFORGE.md` — step-by-step guide covering build, service template, webservice start, env vars, updates, and troubleshooting
 - `server.py` reads `$PORT` env var as the first port-source option (Toolforge convention), then CLI arg, then 8080 fallback
-- D3.js loaded from `cdn.toolforge.org` (Toolforge's anonymizing proxy to cdnjs) instead of `d3js.org`, per Toolforge privacy policy
+- D3.js loaded from `d3js.org` (Toolforge's CDN proxy lacks the d3 v7 library, so the canonical CDN is used as fallback)
 
 ### Configuration
 - All key settings configurable via environment variables (see README for full table)
@@ -119,7 +119,7 @@
 
 ### Long-term
 - **Accessibility**: The graph is purely visual. Screen reader users cannot navigate it. A tabular "related articles" view and keyboard navigation would address this.
-- **Offline support**: D3.js v7 is loaded from Toolforge's CDN proxy (`cdn.toolforge.org`). While this preserves user privacy, the tool still requires internet access for the CDN load. Pre-bundling D3.js into the repository or Docker image would eliminate this dependency.
+- **Offline support**: D3.js v7 is loaded from `d3js.org` CDN. Pre-bundling the library into the repository or Docker image would eliminate this dependency and improve load times.
 - **WebSocket live updates**: Push real-time updates as the daily top 100 changes (Hatnote updates daily).
 - **Mobile layout**: The controls bar and side panel need responsive breakpoints for smaller screens. The force graph is inherently desktop-friendly.
 - **User-contributed connection types**: Allow users to define custom edges between articles (e.g., "both articles were in the news this week"). This requires adding a small backend for persistence.

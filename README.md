@@ -135,7 +135,7 @@ http://localhost:8080/?play=1&date=2026-05-17&speed=5&zoom=2&fontsize=7&order=ra
 
 - Python 3.12+
 - `httpx`, `networkx`, `spacy` (+ `en_core_web_sm`)
-- D3.js v7 (loaded from Toolforge CDN proxy in `index.html`)
+- D3.js v7 (loaded from CDN in `index.html`)
 - `pytest` (for running tests)
 
 ## Deployment
