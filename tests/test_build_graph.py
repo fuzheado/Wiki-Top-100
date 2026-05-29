@@ -260,9 +260,9 @@ class TestFetchTop100:
                  "summary": "A real article.", "image_url": "", "history": []},
             ]
         }
-        with patch("build_graph.fetch_json", return_value=mock_data):
-            with patch("build_graph._cache_get", return_value=None), \
-                 patch("build_graph._cache_set"):
+        with patch("wikigraph.sources.hatnote.fetch_json", return_value=mock_data):
+            with patch("wikigraph.sources.hatnote._cache_get", return_value=None), \
+                 patch("wikigraph.sources.hatnote._cache_set"):
                 articles = fetch_top100("2026", "5", "17")
                 assert len(articles) == 1
                 assert articles[0]["id"] == "Real_Article"
@@ -275,9 +275,9 @@ class TestFetchTop100:
                  "url": "https://wiki/Test_Article", "history": [1, 2, 3]},
             ]
         }
-        with patch("build_graph.fetch_json", return_value=mock_data):
-            with patch("build_graph._cache_get", return_value=None), \
-                 patch("build_graph._cache_set"):
+        with patch("wikigraph.sources.hatnote.fetch_json", return_value=mock_data):
+            with patch("wikigraph.sources.hatnote._cache_get", return_value=None), \
+                 patch("wikigraph.sources.hatnote._cache_set"):
                 articles = fetch_top100("2026", "5", "17")
                 a = articles[0]
                 assert a["id"] == "Test_Article"
@@ -293,8 +293,8 @@ class TestProgressCallback:
         messages = []
         def cb(msg):
             messages.append(msg)
-        with patch("build_graph.fetch_top100", return_value=[]), \
-             patch("build_graph.asyncio.run", return_value={}):
+        with patch("wikigraph.pipeline.fetch_top100", return_value=[]), \
+             patch("wikigraph.pipeline.asyncio.run", return_value={}):
             build_graph("2026", "5", "17", progress_callback=cb)
         assert len(messages) > 0
         assert any("top 100" in m.lower() for m in messages)
@@ -323,16 +323,16 @@ class TestUserAgent:
         assert _is_valid_ua(HEADERS["User-Agent"]) is True
 
     def test_graph_meta_includes_ua_fields(self):
-        with patch("build_graph.fetch_top100", return_value=[]), \
-             patch("build_graph.asyncio.run", return_value={}):
+        with patch("wikigraph.pipeline.fetch_top100", return_value=[]), \
+             patch("wikigraph.pipeline.asyncio.run", return_value={}):
             result = build_graph("2026", "5", "17")
         assert "user_agent" in result["meta"]
         assert "ua_compliant" in result["meta"]
         assert result["meta"]["ua_compliant"] is True
 
     def test_meta_includes_failed_articles(self):
-        with patch("build_graph.fetch_top100", return_value=[]), \
-             patch("build_graph.asyncio.run", return_value={}):
+        with patch("wikigraph.pipeline.fetch_top100", return_value=[]), \
+             patch("wikigraph.pipeline.asyncio.run", return_value={}):
             result = build_graph("2026", "5", "17")
         assert "failed_articles" in result["meta"]
         assert "failed_count" in result["meta"]

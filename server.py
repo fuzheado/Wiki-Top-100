@@ -16,7 +16,7 @@ import json, os, sys, shutil
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-from build_graph import build_graph, CACHE_DIR
+from wikigraph import build_graph, CACHE_DIR
 
 
 class GraphAPIHandler(SimpleHTTPRequestHandler):
@@ -57,7 +57,8 @@ class GraphAPIHandler(SimpleHTTPRequestHandler):
             try:
                 write_json({"type": "progress", "message": "Fetching top 100..."})
                 graph_data = build_graph(year, month, day, min_entity_share=min_entity,
-                                         ignore_articles=ignore_list, progress_callback=lambda m: write_json({"type": "progress", "message": m}),
+                                         ignore_articles=ignore_list,
+                                         progress_callback=lambda m: write_json({"type": "progress", "message": m}),
                                          user_agent=user_agent)
                 write_json({"type": "graph", "data": graph_data})
             except Exception as e:
