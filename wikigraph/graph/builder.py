@@ -6,8 +6,6 @@ for categories and entities serve as visual intermediaries.
 """
 import collections
 
-import networkx as nx
-
 from ..analyzer.clustering import assign_cluster
 
 
